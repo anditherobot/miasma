@@ -1,12 +1,7 @@
 import Phaser from 'phaser';
+import AudioManager from '../core/AudioManager.js';
 import AssetGenerator from '../core/Assets.js';
 import { COLORS, DEPTH, PHYSICS } from '../core/Constants.js';
-import Player from '../entities/Player.js';
-import Sentinel from '../entities/Sentinel.js';
-import Stabilizer from '../entities/Stabilizer.js';
-import LevelBuilder from '../core/LevelBuilder.js';
-import { MAPS } from '../core/Maps.js';
-import Starfield from '../core/Starfield.js';
 
 export default class Level1 extends Phaser.Scene {
     constructor() { super('Level1'); }
@@ -18,8 +13,14 @@ export default class Level1 extends Phaser.Scene {
     }
 
     create() {
+        AudioManager.init();
+        this.input.once('pointerdown', () => AudioManager.resume());
+
         AssetGenerator.generate(this);
         
+        // --- HAND TRACKING VISUALIZER ---
+        this.handGraphics = this.add.graphics().setDepth(DEPTH.UI + 10);
+
         // --- GROUPS ---
         this.walls = this.physics.add.staticGroup(); 
         this.missiles = this.physics.add.group();
@@ -75,6 +76,7 @@ export default class Level1 extends Phaser.Scene {
         });
         
         this.physics.add.overlap(this.missiles, this.player, (player, missile) => {
+            AudioManager.playSound('sizzle');
             player.takeDamage(0.15);
             this.destroyMissile(missile);
         });
@@ -141,6 +143,18 @@ export default class Level1 extends Phaser.Scene {
     }
 
     update(time, delta) {
+        // --- HAND TRACKING DEBUG ---
+        this.handGraphics.clear();
+        const landmarks = handTrackingInstance.getLandmarks();
+        if (landmarks && landmarks.length > 0) {
+            this.handGraphics.fillStyle(0x00ff00, 1);
+            for (const hand of landmarks) {
+                for (const point of hand) {
+                    this.handGraphics.fillCircle(point.x * 800, point.y * 600, 5);
+                }
+            }
+        }
+
         if (this.starfield) this.starfield.update();
         
         this.player.update(this.cursors);
@@ -207,6 +221,7 @@ export default class Level1 extends Phaser.Scene {
 
     handleSafeZone() {
         if (this.player.cleanse()) {
+            AudioManager.playSound('splash');
             // Visual feedback for cleansing handled in Player or via particles potentially
         }
         

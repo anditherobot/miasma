@@ -12,7 +12,7 @@
 - [x] **Bug Fix:** Fixed `setRadius` crash by implementing `setCircle` dynamic resizing.
 - [x] **Level Design:** Added "Shrink Tunnel" barrier (Task 2).
 - [ ] **Visuals:** Add `postFX` glow to Blue Orb.
-- [ ] **Audio:** Add sound for "Sizzle" (infection) and "Splash" (cleanse).
+- [x] **Audio:** Add sound for "Sizzle" (infection) and "Splash" (cleanse).
 - [ ] **UI:** Add a "Contamination %" bar / Size indicator.
 - [ ] **Tuning:** Refine homing missile steering (Task 3).
 
