@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cyber Tactical Prototype</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container">
+        <div class="hud">
+            <div class="integrity-meter">
+                <svg width="80" height="80">
+                    <circle class="circle bg" cx="40" cy="40" r="35"></circle>
+                    <circle class="circle progress" cx="40" cy="40" r="35" transform="rotate(-90 40 40)"></circle>
+                </svg>
+                <div class="percentage">100%</div>
+                <div class="label">MASS</div>
+            </div>
+            <div class="zone-info">ZONE: <span class="highlight">INSIDE</span></div>
+        </div>
+
+        <canvas id="gameCanvas"></canvas>
+        
+        <!-- Overlays -->
+        <div class="vignette"></div>
+        <div class="scanlines"></div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>

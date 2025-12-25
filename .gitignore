@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+vendor/
+.pnp/
+.pnp.js
+
+# Build output
+dist/
+build/
+bin/
+obj/
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor/System files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Temporary files
+C:\Users\expan\.gemini\tmp\dc20358db182081ac881a1fdb9387ab6a8af5adc2ebcebbfc50b5c0363ffeed7/
+temp/
+tmp/
