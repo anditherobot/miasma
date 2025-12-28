@@ -49,7 +49,10 @@ circle {
     stroke-width: 5;
 }
 
-.circle.bg { stroke: #222; }
+.circle.bg {
+    stroke: #222;
+}
+
 .circle.progress {
     stroke: #00ff88;
     stroke-dasharray: 220;
@@ -58,19 +61,19 @@ circle {
     transition: stroke-dashoffset 0.1s linear, stroke 0.3s ease;
 }
 
-.percentage { 
+.percentage {
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    font-size: 1.2rem; 
+    font-size: 1.2rem;
     color: #fff;
 }
 
-.label { 
+.label {
     margin-top: 5px;
-    font-size: 0.7rem; 
-    color: #888; 
+    font-size: 0.7rem;
+    color: #888;
 }
 
 .zone-info {
@@ -116,19 +119,24 @@ circle {
 }
 
 @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
 }
 
 /* Retro Scanline Overlay */
 .scanlines {
     position: absolute;
     inset: 0;
-    background: linear-gradient(
-        to bottom,
-        rgba(18, 16, 16, 0) 50%,
-        rgba(0, 0, 0, 0.1) 50%
-    );
+    background: linear-gradient(to bottom,
+            rgba(18, 16, 16, 0) 50%,
+            rgba(0, 0, 0, 0.1) 50%);
     background-size: 100% 4px;
     z-index: 10;
     pointer-events: none;
@@ -139,7 +147,7 @@ circle {
 .vignette {
     position: absolute;
     inset: 0;
-    background: radial-gradient(circle, transparent 40%, rgba(0,0,0,0.8) 100%);
+    background: radial-gradient(circle, transparent 40%, rgba(0, 0, 0, 0.8) 100%);
     pointer-events: none;
     z-index: 10;
     opacity: 0;
@@ -150,4 +158,27 @@ circle {
 .level-outside .scanlines,
 .level-outside .vignette {
     opacity: 1;
+}
+
+/* Video Feed Styling */
+.video-feed {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    opacity: 0.75;
+    pointer-events: none;
+    width: 90vw;
+    height: 90vh;
+    max-width: 1400px;
+    max-height: 1000px;
+    object-fit: cover;
+    z-index: 0;
+    border-radius: 20px;
+    border: 100px solid rgb(138, 155, 155);
+    box-shadow:
+        0 0 20px rgba(0, 255, 255, 0.5),
+        0 0 40px rgba(135, 196, 196, 0.3),
+        inset 0 0 20px rgba(0, 255, 255, 0.2);
+    transition: all 0.3s ease;
 }

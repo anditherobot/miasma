@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { handTrackingInstance } from '../core/HandTracking.js';
 import AudioManager from '../core/AudioManager.js';
+import DebugHUD from '../ui/DebugHUD.js';
 
 export default class GuitarScene extends Phaser.Scene {
     constructor() { super('GuitarScene'); }
@@ -8,6 +9,9 @@ export default class GuitarScene extends Phaser.Scene {
     create() {
         // Setup
         this.cameras.main.setBackgroundColor('rgba(0,0,0,0)');
+
+        // Initialize Debug HUD
+        this.debugHUD = new DebugHUD(this);
 
         // Start audio on first user interaction
         const startAudio = () => {
@@ -149,14 +153,27 @@ export default class GuitarScene extends Phaser.Scene {
 
         // Filter for left hand only
         let landmarks = null;
+        let leftHandIndex = -1;
         if (allLandmarks && allLandmarks.length > 0 && handedness && handedness.length > 0) {
             for (let i = 0; i < handedness.length; i++) {
                 if (handedness[i][0].categoryName === 'Left') {
                     landmarks = allLandmarks[i];
+                    leftHandIndex = i;
                     break;
                 }
             }
         }
+
+        // UPDATE DEBUG HUD
+        this.debugHUD.update(time, {
+            hand: landmarks,
+            handCount: allLandmarks ? allLandmarks.length : 0,
+            hz: this.currentHz,
+            note: this.currentNote,
+            volume: 0, // Need to expose volume from AudioManager if needed
+            isCalibrated: this.isCalibrated,
+            fretboard: this.fretboard
+        });
 
         if (this.isCalibrated) {
             // PLAY MODE
