@@ -61,7 +61,7 @@ export default class GuitarScene extends Phaser.Scene {
             stroke: '#000000',
             strokeThickness: 3
         }).setOrigin(0.5)
-          .setShadow(0, 0, 20, '#ffffff', false, true);
+            .setShadow(0, 0, 20, '#ffffff', false, true);
 
         // Instruction Text (Center Bottom)
         this.instructionText = this.add.text(500, 750, '', {
@@ -71,7 +71,7 @@ export default class GuitarScene extends Phaser.Scene {
             backgroundColor: '#000000bb',
             padding: { x: 20, y: 12 }
         }).setOrigin(0.5)
-          .setShadow(0, 0, 8, '#00ffff', false, true);
+            .setShadow(0, 0, 8, '#00ffff', false, true);
 
         // System Status (Top Right)
         this.statusPill = this.add.text(970, 30, 'INITIALIZING', {
@@ -81,7 +81,24 @@ export default class GuitarScene extends Phaser.Scene {
             backgroundColor: '#000000aa',
             padding: { x: 15, y: 8 }
         }).setOrigin(1, 0)
-          .setShadow(0, 0, 8, '#ffaa00', false, true);
+            .setShadow(0, 0, 8, '#ffaa00', false, true);
+
+        // --- HAND VISUALIZATION LABELS (Dynamic) ---
+        this.rotationLabel = this.add.text(0, 0, '▲ rotation 0', {
+            fontFamily: 'Courier New, monospace',
+            fontSize: '14px',
+            fill: '#ffffff',
+        }).setShadow(0, 0, 5, '#ffffff', false, true);
+
+        this.palmLabel = this.add.text(0, 0, 'palm locked\n:: 0.0', {
+            fontFamily: 'Courier New, monospace',
+            fontSize: '16px',
+            fill: '#ff5500',
+            align: 'left'
+        }).setShadow(0, 0, 5, '#ff5500', false, true);
+
+        this.rotationLabel.setVisible(false);
+        this.palmLabel.setVisible(false);
 
         // Reset
         this.input.keyboard.on('keydown-SPACE', () => {
@@ -555,13 +572,47 @@ export default class GuitarScene extends Phaser.Scene {
         const palmX = ((wrist.x + middle.x) / 2) * scaleX;
         const palmY = ((wrist.y + middle.y) / 2) * scaleY;
 
-        // Large rotating gear at palm
-        this.drawTechGear(g, palmX, palmY, 35, -time / 500, 0x00ffff);
+        // Large rotating gear at palm (White)
+        this.drawTechGear(g, palmX, palmY, 45, -time / 500, 0xffffff);
+        this.drawTechGear(g, palmX, palmY, 30, time / 400, 0xffffff); // Inner counter-rotating ring
 
-        // Pulsing ring
-        const pulseSize = 45 + Math.sin(time / 200) * 5;
-        g.lineStyle(2, 0x00ffff, 0.3);
-        g.strokeCircle(palmX, palmY, pulseSize);
+        // Calculate Rotation from hand tilt
+        let angleRad = Phaser.Math.Angle.Between(
+            wrist.x * scaleX, wrist.y * scaleY,
+            middle.x * scaleX, middle.y * scaleY
+        );
+        let dialAngle = -(angleRad + (Math.PI / 2));
+        const rotationDeg = Math.floor(dialAngle * 57.2958);
+
+        // Position Cube & Grid relative to Palm (Offset: Left and Down)
+        const cubeX = palmX - 120;
+        const cubeY = palmY + 60;
+        const cubeSize = 50;
+
+        // Draw Grid (Blue/Purple)
+        this.drawHeightmapGrid(g, cubeX, cubeY + 50, cubeSize * 1.5);
+
+        // Draw Cube (Orange Wireframe)
+        this.drawWireframeCube(g, cubeX, cubeY, cubeSize, time / 1000, 0xff5500);
+
+        // Line from Palm to Cube
+        g.lineStyle(1, 0xffffff, 0.5);
+        g.lineBetween(palmX, palmY + 45, cubeX + 30, cubeY);
+
+        // Update Text Labels
+        // "palm locked" label near the cube
+        if (this.palmLabel) {
+            this.palmLabel.setPosition(cubeX + 60, cubeY - 20);
+            this.palmLabel.setText(`palm locked\n:: ${Math.floor(wrist.z * -10000) / 10}`); // Mock data from Z depth
+            this.palmLabel.setVisible(true);
+        }
+
+        // "rotation" label near the palm/wrist
+        if (this.rotationLabel) {
+            this.rotationLabel.setPosition(palmX - 60, palmY + 60);
+            this.rotationLabel.setText(`▲ rotation ${rotationDeg}`);
+            this.rotationLabel.setVisible(true);
+        }
     }
 
     drawTechGear(g, x, y, radius, rotation, color) {
@@ -588,6 +639,46 @@ export default class GuitarScene extends Phaser.Scene {
         g.lineStyle(1, color, 0.7);
         g.lineBetween(x - r2, y, x + r2, y);
         g.lineBetween(x, y - r2, x, y + r2);
+    }
+
+    drawWireframeCube(g, cx, cy, size, rotX, color) {
+        g.lineStyle(2, color, 1);
+        const r = size;
+        const project = (x, y, z) => {
+            const px = x * Math.cos(rotX) - z * Math.sin(rotX);
+            const pz = x * Math.sin(rotX) + z * Math.cos(rotX);
+            const py = y;
+            const scale = 300 / (300 + pz * r);
+            return { x: cx + px * r * scale, y: cy + py * r * scale };
+        }
+        const v = [];
+        for (let z of [-1, 1]) for (let y of [-1, 1]) for (let x of [-1, 1]) v.push(project(x, y, z));
+        const edges = [[0, 1], [1, 3], [3, 2], [2, 0], [4, 5], [5, 7], [7, 6], [6, 4], [0, 4], [1, 5], [2, 6], [3, 7]];
+        edges.forEach(e => {
+            g.beginPath();
+            g.moveTo(v[e[0]].x, v[e[0]].y);
+            g.lineTo(v[e[1]].x, v[e[1]].y);
+            g.strokePath();
+        });
+    }
+
+    drawHeightmapGrid(g, cx, cy, size) {
+        g.lineStyle(1, 0x0044ff, 0.8); // Blue grid
+        const divisions = 4;
+        const step = size / divisions;
+        for (let i = 0; i <= divisions; i++) {
+            // Horizontal
+            g.moveTo(cx - size / 2, cy - size / 2 + i * step);
+            g.lineTo(cx + size / 2, cy - size / 2 + i * step);
+            // Vertical
+            g.moveTo(cx - size / 2 + i * step, cy - size / 2);
+            g.lineTo(cx - size / 2 + i * step, cy + size / 2);
+        }
+        g.strokePath();
+
+        // Border
+        g.lineStyle(2, 0x0044ff, 1);
+        g.strokeRect(cx - size / 2, cy - size / 2, size, size);
     }
 
     drawVisualTuner(time) {
@@ -722,9 +813,9 @@ export default class GuitarScene extends Phaser.Scene {
 
     getNoteColor(note) {
         const colorMap = {
-            'C': 0xff0000,   'C#': 0xff4400,  'D': 0xff8800,   'D#': 0xffcc00,
-            'E': 0xffff00,   'F': 0x88ff00,   'F#': 0x00ff00,  'G': 0x00ff88,
-            'G#': 0x00ffff,  'A': 0x0088ff,   'A#': 0x4400ff,  'B': 0x8800ff
+            'C': 0xff0000, 'C#': 0xff4400, 'D': 0xff8800, 'D#': 0xffcc00,
+            'E': 0xffff00, 'F': 0x88ff00, 'F#': 0x00ff00, 'G': 0x00ff88,
+            'G#': 0x00ffff, 'A': 0x0088ff, 'A#': 0x4400ff, 'B': 0x8800ff
         };
         return colorMap[note] || 0xffffff;
     }
