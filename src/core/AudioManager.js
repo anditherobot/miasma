@@ -21,6 +21,92 @@ export default class AudioManager {
 
         this.buffers = {};
         this.initialized = true;
+
+        // Pitch Detection Variables
+        this.analyser = null;
+        this.mediaStreamSource = null;
+        this.detectorBuffer = new Float32Array(2048);
+    }
+
+    static async startMicrophone() {
+        if (!this.initialized) this.init();
+        this.resume();
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            this.mediaStreamSource = this.ctx.createMediaStreamSource(stream);
+            this.analyser = this.ctx.createAnalyser();
+            this.analyser.fftSize = 2048;
+            this.mediaStreamSource.connect(this.analyser);
+            console.log("Microphone connected for pitch detection.");
+        } catch (err) {
+            console.error("Error accessing microphone:", err);
+        }
+    }
+
+    static getPitch() {
+        if (!this.analyser) return -1;
+
+        this.analyser.getFloatTimeDomainData(this.detectorBuffer);
+        const ac = this.autoCorrelate(this.detectorBuffer, this.ctx.sampleRate);
+        return ac; // Returns frequency in Hz, or -1 if undefined
+    }
+
+    static getWaveform() {
+        if (!this.analyser) return [];
+
+        const waveformBuffer = new Float32Array(this.analyser.fftSize);
+        this.analyser.getFloatTimeDomainData(waveformBuffer);
+
+        // Return normalized waveform data (array of values between -1 and 1)
+        return Array.from(waveformBuffer);
+    }
+
+    // Basic Autocorrelation Algorithm
+    static autoCorrelate(buf, sampleRate) {
+        // Implements the ACF2+ algorithm
+        let SIZE = buf.length;
+        let rms = 0;
+
+        for (let i = 0; i < SIZE; i++) {
+            const val = buf[i];
+            rms += val * val;
+        }
+        rms = Math.sqrt(rms / SIZE);
+
+        if (rms < 0.01) // Not enough signal
+            return -1;
+
+        let r1 = 0, r2 = SIZE - 1, thres = 0.2;
+        for (let i = 0; i < SIZE / 2; i++)
+            if (Math.abs(buf[i]) < thres) { r1 = i; break; }
+        for (let i = 1; i < SIZE / 2; i++)
+            if (Math.abs(buf[SIZE - i]) < thres) { r2 = SIZE - i; break; }
+
+        buf = buf.slice(r1, r2);
+        SIZE = buf.length;
+
+        const c = new Array(SIZE).fill(0);
+        for (let i = 0; i < SIZE; i++)
+            for (let j = 0; j < SIZE - i; j++)
+                c[i] = c[i] + buf[j] * buf[j + i];
+
+        let d = 0; while (c[d] > c[d + 1]) d++;
+        let maxval = -1, maxpos = -1;
+        for (let i = d; i < SIZE; i++) {
+            if (c[i] > maxval) {
+                maxval = c[i];
+                maxpos = i;
+            }
+        }
+        let T0 = maxpos;
+
+        const x1 = c[T0 - 1], x2 = c[T0], x3 = c[T0 + 1];
+        const a = (x1 + x3 - 2 * x2) / 2;
+        const b = (x3 - x1) / 2;
+        if (a) T0 = T0 - b / (2 * a);
+
+        return sampleRate / T0;
     }
 
     static resume() {

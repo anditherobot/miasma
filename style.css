@@ -13,6 +13,7 @@ body {
     display: flex;
     justify-content: center;
     align-items: center;
+    background-color: #cfc5c5;
     transition: background 1s ease;
 }
 
