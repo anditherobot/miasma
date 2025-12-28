@@ -44,12 +44,16 @@ export class HandTracking {
     this.video.style.top = "50%";
     this.video.style.left = "50%";
     this.video.style.transform = "translate(-50%, -50%)";
-    this.video.style.opacity = "0.6";
+    this.video.style.opacity = "0.75";
     this.video.style.pointerEvents = "none";
-    this.video.style.width = "800px";
-    this.video.style.height = "600px";
+    this.video.style.width = "90vw";
+    this.video.style.height = "90vh";
+    this.video.style.maxWidth = "1400px";
+    this.video.style.maxHeight = "1000px";
     this.video.style.objectFit = "cover";
     this.video.style.zIndex = "0";
+    this.video.style.borderRadius = "8px";
+    this.video.style.boxShadow = "0 0 60px 20px rgba(255, 255, 255, 0.4), 0 0 120px 40px rgba(255, 255, 255, 0.3), 0 0 180px 60px rgba(255, 255, 255, 0.2), 0 0 240px 80px rgba(255, 255, 255, 0.1)";
     this.video.autoplay = true;
     this.video.playsInline = true;
 
@@ -97,6 +101,10 @@ export class HandTracking {
 
   getLandmarks() {
     return this.results ? this.results.landmarks : [];
+  }
+
+  getHandedness() {
+    return this.results ? this.results.handedness : [];
   }
 
   getVideoElement() {

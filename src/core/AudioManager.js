@@ -45,10 +45,13 @@ export default class AudioManager {
     }
 
     static getPitch() {
-        if (!this.analyser) return -1;
+        if (!this.analyser) {
+            return -1;
+        }
 
         this.analyser.getFloatTimeDomainData(this.detectorBuffer);
         const ac = this.autoCorrelate(this.detectorBuffer, this.ctx.sampleRate);
+
         return ac; // Returns frequency in Hz, or -1 if undefined
     }
 
@@ -74,7 +77,7 @@ export default class AudioManager {
         }
         rms = Math.sqrt(rms / SIZE);
 
-        if (rms < 0.01) // Not enough signal
+        if (rms < 0.005) // Lowered threshold for better sensitivity
             return -1;
 
         let r1 = 0, r2 = SIZE - 1, thres = 0.2;

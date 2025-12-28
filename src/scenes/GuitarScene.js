@@ -8,6 +8,18 @@ export default class GuitarScene extends Phaser.Scene {
     create() {
         // Setup
         this.cameras.main.setBackgroundColor('rgba(0,0,0,0)');
+
+        // Start audio on first user interaction
+        const startAudio = () => {
+            AudioManager.startMicrophone();
+            this.input.keyboard.off('keydown', startAudio);
+            this.input.off('pointerdown', startAudio);
+        };
+
+        this.input.keyboard.once('keydown', startAudio);
+        this.input.once('pointerdown', startAudio);
+
+        // Try to start immediately (may be blocked by browser)
         AudioManager.startMicrophone();
 
         // State
@@ -20,6 +32,7 @@ export default class GuitarScene extends Phaser.Scene {
         this.fretGraphics = this.add.graphics();
         this.handGraphics = this.add.graphics();
         this.waveformGraphics = this.add.graphics();
+        this.tunerGraphics = this.add.graphics();
 
         // Fretboard reference (calibrated position)
         this.fretboard = {
@@ -32,30 +45,43 @@ export default class GuitarScene extends Phaser.Scene {
         // Waveform buffer for visualization
         this.waveformData = [];
 
-        // UI
-        this.hudText = this.add.text(20, 20, '', {
-            fontFamily: 'monospace',
-            fontSize: '14px',
-            fill: '#00ff00',
-            backgroundColor: '#00000088',
-            padding: { x: 10, y: 8 }
-        });
+        // UI - Status HUD (Top Left)
+        this.hudText = this.add.text(30, 30, '', {
+            fontFamily: 'Courier New, monospace',
+            fontSize: '13px',
+            fill: '#00ff88',
+            padding: { x: 12, y: 10 }
+        }).setShadow(0, 0, 10, '#00ff88', false, true);
 
-        this.noteText = this.add.text(500, 50, '-', {
-            fontFamily: 'Arial',
-            fontSize: '64px',
+        // Large Note Display (Top Center)
+        this.noteText = this.add.text(500, 60, '-', {
+            fontFamily: 'Arial Black, sans-serif',
+            fontSize: '72px',
             fill: '#ffffff',
             stroke: '#000000',
-            strokeThickness: 6
-        }).setOrigin(0.5);
+            strokeThickness: 3
+        }).setOrigin(0.5)
+          .setShadow(0, 0, 20, '#ffffff', false, true);
 
-        this.instructionText = this.add.text(500, 550, '', {
-            fontFamily: 'monospace',
-            fontSize: '18px',
+        // Instruction Text (Center Bottom)
+        this.instructionText = this.add.text(500, 750, '', {
+            fontFamily: 'Courier New, monospace',
+            fontSize: '16px',
             fill: '#ffffff',
-            backgroundColor: '#000000cc',
-            padding: { x: 15, y: 10 }
-        }).setOrigin(0.5);
+            backgroundColor: '#000000bb',
+            padding: { x: 20, y: 12 }
+        }).setOrigin(0.5)
+          .setShadow(0, 0, 8, '#00ffff', false, true);
+
+        // System Status (Top Right)
+        this.statusPill = this.add.text(970, 30, 'INITIALIZING', {
+            fontFamily: 'Courier New, monospace',
+            fontSize: '12px',
+            fill: '#ffaa00',
+            backgroundColor: '#000000aa',
+            padding: { x: 15, y: 8 }
+        }).setOrigin(1, 0)
+          .setShadow(0, 0, 8, '#ffaa00', false, true);
 
         // Reset
         this.input.keyboard.on('keydown-SPACE', () => {
@@ -69,57 +95,109 @@ export default class GuitarScene extends Phaser.Scene {
         this.fretGraphics.clear();
         this.handGraphics.clear();
         this.waveformGraphics.clear();
+        this.tunerGraphics.clear();
 
         // Audio processing
         const hz = AudioManager.getPitch();
+
+        // Debug: Log to console (removed - too much spam, check AudioManager logs instead)
+
         if (hz > 50) {
             this.currentHz = hz;
             this.currentNote = this.hzToNote(hz);
             this.noteText.setText(this.currentNote);
-            this.noteText.setTint(this.getNoteColor(this.currentNote));
-            this.noteText.setScale(1.1 + Math.sin(time / 100) * 0.05);
+            this.noteText.setVisible(true);
+            const noteColor = this.getNoteColor(this.currentNote);
+            this.noteText.setTint(noteColor);
+
+            // Pulsing glow effect
+            const glowColor = Phaser.Display.Color.IntegerToColor(noteColor);
+            this.noteText.setShadow(0, 0, 20 + Math.sin(time / 100) * 10,
+                `rgb(${glowColor.red},${glowColor.green},${glowColor.blue})`, false, true);
+            this.noteText.setScale(1.0 + Math.sin(time / 100) * 0.03);
         } else {
+            this.noteText.setText('--');
+            this.noteText.setVisible(true);
             this.noteText.setScale(1.0);
             this.noteText.setTint(0x666666);
+            this.noteText.setShadow(0, 0, 5, '#666666', false, true);
         }
 
         // Get waveform data for visualization
         this.waveformData = AudioManager.getWaveform();
 
-        // Hand tracking
-        const landmarks = handTrackingInstance.getLandmarks();
+        // Hand tracking - Only use LEFT hand
+        const allLandmarks = handTrackingInstance.getLandmarks();
+        const handedness = handTrackingInstance.getHandedness();
+
+        // Filter for left hand only
+        let landmarks = null;
+        if (allLandmarks && allLandmarks.length > 0 && handedness && handedness.length > 0) {
+            for (let i = 0; i < handedness.length; i++) {
+                if (handedness[i][0].categoryName === 'Left') {
+                    landmarks = allLandmarks[i];
+                    break;
+                }
+            }
+        }
 
         if (this.isCalibrated) {
             // PLAY MODE
-            this.instructionText.setText("PLAY MODE [SPACE TO RESET]");
-            this.drawFretboardOverlay();
+            this.instructionText.setText("◆ PLAY MODE ◆ [SPACE: RECALIBRATE]");
+            this.statusPill.setText('● ACTIVE');
+            this.statusPill.setStyle({ fill: '#00ff88' });
+            this.statusPill.setShadow(0, 0, 10, '#00ff88', false, true);
 
-            if (landmarks && landmarks.length > 0) {
-                this.drawARHandVisualization(landmarks[0], time);
+            if (landmarks) {
+                this.updateFretboardPosition(landmarks);
+                this.drawStringLines(time);
+                this.drawARHandVisualization(landmarks, time);
+            } else {
+                this.drawStringLines(time);
             }
 
+            this.drawVisualTuner(time);
             this.drawWaveform(time);
 
+            const displayHz = this.currentHz > 0 ? Math.floor(this.currentHz) : 0;
+            const displayNote = this.currentNote || '--';
+
             this.hudText.setText(
-                `PITCH: ${Math.floor(this.currentHz)} Hz\n` +
-                `NOTE:  ${this.currentNote}\n` +
-                `STATUS: ACTIVE`
+                `FREQ: ${displayHz} Hz\n` +
+                `NOTE: ${displayNote}\n` +
+                `MODE: TRACKING`
             );
+            this.hudText.setVisible(true);
 
         } else {
             // CALIBRATION MODE
-            this.instructionText.setText("PLACE 4 FINGERS ON FRETS 1-4 (HORIZONTAL)");
+            this.instructionText.setText("◆ CALIBRATION ◆ PLACE LEFT HAND - 4 FINGERS ON FRETS 1-4");
+            this.statusPill.setText('○ STANDBY');
+            this.statusPill.setStyle({ fill: '#ffaa00' });
+            this.statusPill.setShadow(0, 0, 8, '#ffaa00', false, true);
 
-            if (landmarks && landmarks.length > 0) {
-                this.tryCalibrate(landmarks[0]);
+            // Show audio feedback even during calibration
+            this.drawWaveform(time);
+
+            const displayHz = this.currentHz > 0 ? Math.floor(this.currentHz) : 0;
+            const displayNote = this.currentNote || '--';
+
+            this.hudText.setText(
+                `FREQ: ${displayHz} Hz\n` +
+                `NOTE: ${displayNote}\n` +
+                `MODE: CALIBRATING`
+            );
+            this.hudText.setVisible(true);
+
+            if (landmarks) {
+                this.tryCalibrate(landmarks, time);
             } else {
                 this.calibrationStableFrames = 0;
-                this.hudText.setText("WAITING FOR HAND...");
             }
         }
     }
 
-    tryCalibrate(hand) {
+    tryCalibrate(hand, time) {
         // Get 4 fingertips: Index(8), Middle(12), Ring(16), Pinky(20)
         const fingers = [
             { id: 8, name: 'INDEX' },
@@ -136,20 +214,13 @@ export default class GuitarScene extends Phaser.Scene {
 
         // Draw the finger positions
         const g = this.fretGraphics;
-        g.lineStyle(3, 0x00ff00, 1);
 
-        // Connect the dots
-        for (let i = 0; i < points.length - 1; i++) {
-            g.lineBetween(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y);
-        }
-
-        // Draw circles on fingertips
-        points.forEach((p, i) => {
-            g.fillStyle(0x00ff00, 0.3);
-            g.fillCircle(p.x, p.y, 20);
-            g.lineStyle(2, 0x00ff00, 1);
-            g.strokeCircle(p.x, p.y, 20);
-        });
+        // Always draw the alignment line to show finger positions
+        // Calculate best-fit line through the 4 points
+        const startX = points[0].x;
+        const startY = points[0].y;
+        const endX = points[3].x;
+        const endY = points[3].y;
 
         // Check if fingers are roughly horizontal (aligned)
         const isAligned = this.checkAlignment(points);
@@ -158,13 +229,62 @@ export default class GuitarScene extends Phaser.Scene {
             this.calibrationStableFrames++;
             const progress = Math.min(100, Math.floor((this.calibrationStableFrames / 60) * 100));
 
-            this.hudText.setText(`CALIBRATING... ${progress}%\nHOLD STEADY!`);
+            this.hudText.setText(
+                `CALIBRATING\n` +
+                `${progress}%\n` +
+                `HOLD STEADY`
+            );
 
-            // Draw progress indicator
-            g.lineStyle(6, 0x00ff00, 0.3 + (progress / 100) * 0.7);
+            // Draw thick glowing alignment line through all 4 fingers
+            // Outer glow (widest)
+            g.lineStyle(20, 0x00ff88, 0.1);
+            g.lineBetween(startX, startY, endX, endY);
+
+            // Middle glow
+            g.lineStyle(12, 0x00ff88, 0.3);
+            g.lineBetween(startX, startY, endX, endY);
+
+            // Inner glow
+            g.lineStyle(6, 0x00ff88, 0.6);
+            g.lineBetween(startX, startY, endX, endY);
+
+            // Core line
+            g.lineStyle(3, 0x00ff88, 1);
+            g.lineBetween(startX, startY, endX, endY);
+
+            // Draw circles on fingertips with pulse
+            const pulseSize = 2 + Math.sin(time / 100) * 1;
+            points.forEach((p, i) => {
+                // Outer glow
+                g.fillStyle(0x00ff88, 0.1);
+                g.fillCircle(p.x, p.y, 30 + pulseSize);
+
+                // Middle ring
+                g.fillStyle(0x00ff88, 0.3);
+                g.fillCircle(p.x, p.y, 20 + pulseSize);
+
+                // Inner bright circle
+                g.fillStyle(0x00ff88, 0.8);
+                g.fillCircle(p.x, p.y, 10 + pulseSize);
+
+                // Stroke
+                g.lineStyle(2, 0x00ff88, 1);
+                g.strokeCircle(p.x, p.y, 18 + pulseSize);
+            });
+
+            // Draw progress indicator at center
             const centerX = (points[0].x + points[3].x) / 2;
             const centerY = (points[0].y + points[3].y) / 2;
-            g.strokeCircle(centerX, centerY, 40 + (progress / 100) * 20);
+
+            const progressArc = (progress / 100) * (Math.PI * 2);
+            g.lineStyle(6, 0x00ff88, 0.8);
+            g.beginPath();
+            g.arc(centerX, centerY, 50, -Math.PI / 2, -Math.PI / 2 + progressArc);
+            g.strokePath();
+
+            // Outer ring
+            g.lineStyle(2, 0x00ff88, 0.3);
+            g.strokeCircle(centerX, centerY, 60);
 
             if (this.calibrationStableFrames >= 60) { // 1 second hold
                 // Calculate fretboard parameters
@@ -188,13 +308,37 @@ export default class GuitarScene extends Phaser.Scene {
             }
         } else {
             this.calibrationStableFrames = 0;
-            this.hudText.setText("ALIGN FINGERS HORIZONTALLY\nON FRETS 1-4");
+            this.hudText.setText(
+                `ALIGN\n` +
+                `FINGERS\n` +
+                `HORIZONTAL`
+            );
+
+            // Draw alignment line in orange/red to show current alignment (not correct yet)
+            // Outer glow
+            g.lineStyle(16, 0xff5500, 0.15);
+            g.lineBetween(startX, startY, endX, endY);
+
+            // Middle glow
+            g.lineStyle(10, 0xff5500, 0.3);
+            g.lineBetween(startX, startY, endX, endY);
+
+            // Core line
+            g.lineStyle(3, 0xff5500, 0.8);
+            g.lineBetween(startX, startY, endX, endY);
+
+            // Show dimmer circles on fingertips
+            points.forEach((p, i) => {
+                g.fillStyle(0xff5500, 0.2);
+                g.fillCircle(p.x, p.y, 15);
+                g.lineStyle(2, 0xff5500, 0.6);
+                g.strokeCircle(p.x, p.y, 15);
+            });
         }
     }
 
     checkAlignment(points) {
         // Check if points form roughly a horizontal line
-        // Calculate variance in Y positions
         const avgY = points.reduce((sum, p) => sum + p.y, 0) / points.length;
         const variance = points.reduce((sum, p) => sum + Math.abs(p.y - avgY), 0) / points.length;
 
@@ -210,158 +354,361 @@ export default class GuitarScene extends Phaser.Scene {
             Math.abs(spacing3 - avgSpacing)
         ) / 3;
 
-        // Alignment is good if Y variance is low and spacing is consistent
         return variance < 30 && spacingVariance < avgSpacing * 0.4 && avgSpacing > 20 && avgSpacing < 200;
     }
 
-    drawFretboardOverlay() {
+    updateFretboardPosition(hand) {
+        // Update fretboard position based on current finger positions
+        const fingers = [
+            { id: 8, name: 'INDEX' },
+            { id: 12, name: 'MIDDLE' },
+            { id: 16, name: 'RING' },
+            { id: 20, name: 'PINKY' }
+        ];
+
+        const points = fingers.map(f => ({
+            x: hand[f.id].x * 1000,
+            y: hand[f.id].y * 800
+        }));
+
+        // Update center position
+        const centerX = (points[0].x + points[3].x) / 2;
+        const centerY = (points[0].y + points[3].y) / 2;
+
+        // Update angle
+        const angle = Phaser.Math.Angle.Between(
+            points[0].x, points[0].y,
+            points[3].x, points[3].y
+        );
+
+        // Smooth interpolation for less jittery movement
+        const smoothing = 0.3;
+        this.fretboard.centerX += (centerX - this.fretboard.centerX) * smoothing;
+        this.fretboard.centerY += (centerY - this.fretboard.centerY) * smoothing;
+        this.fretboard.angle += (angle - this.fretboard.angle) * smoothing;
+    }
+
+    getActiveString() {
+        // Map frequency to guitar string (standard tuning)
+        // E2 = 82.41 Hz (6th string)
+        // A2 = 110.00 Hz (5th string)
+        // D3 = 146.83 Hz (4th string)
+        // G3 = 196.00 Hz (3rd string)
+        // B3 = 246.94 Hz (2nd string)
+        // E4 = 329.63 Hz (1st string)
+
+        if (this.currentHz < 50) return -1;
+
+        const stringFreqs = [
+            { string: 5, freq: 82.41, name: 'E2' },   // 6th string (lowest)
+            { string: 4, freq: 110.00, name: 'A2' },  // 5th string
+            { string: 3, freq: 146.83, name: 'D3' },  // 4th string
+            { string: 2, freq: 196.00, name: 'G3' },  // 3rd string
+            { string: 1, freq: 246.94, name: 'B3' },  // 2nd string
+            { string: 0, freq: 329.63, name: 'E4' }   // 1st string (highest)
+        ];
+
+        // Find closest string based on frequency
+        let closestString = -1;
+        let minDiff = Infinity;
+
+        stringFreqs.forEach(s => {
+            // Check fundamental and harmonics
+            for (let harmonic = 1; harmonic <= 3; harmonic++) {
+                const harmonicFreq = s.freq * harmonic;
+                const diff = Math.abs(this.currentHz - harmonicFreq);
+
+                // Allow ±50 Hz tolerance for string matching
+                if (diff < minDiff && diff < 50) {
+                    minDiff = diff;
+                    closestString = s.string;
+                }
+            }
+        });
+
+        return closestString;
+    }
+
+    drawStringLines(time) {
         const g = this.fretGraphics;
         const { centerX, centerY, angle, spacing } = this.fretboard;
+        const activeString = this.getActiveString();
 
-        // Draw fret lines
-        g.lineStyle(1, 0x00ffff, 0.3);
+        const perpAngle = angle + Math.PI / 2;
+        const stringSpacing = 20; // Space between strings
 
-        for (let i = 0; i < 12; i++) {
-            const dist = i * spacing;
-            const x = centerX + Math.cos(angle) * dist;
-            const y = centerY + Math.sin(angle) * dist;
+        // Draw 6 guitar strings
+        for (let i = 0; i < 6; i++) {
+            // Calculate offset perpendicular to neck
+            const offset = (i - 2.5) * stringSpacing;
+            const offsetX = Math.cos(perpAngle) * offset;
+            const offsetY = Math.sin(perpAngle) * offset;
 
-            const perpAngle = angle + Math.PI / 2;
-            const lineLength = 100;
-            const x1 = x + Math.cos(perpAngle) * lineLength;
-            const y1 = y + Math.sin(perpAngle) * lineLength;
-            const x2 = x - Math.cos(perpAngle) * lineLength;
-            const y2 = y - Math.sin(perpAngle) * lineLength;
+            // Calculate string start and end points (extend along the neck)
+            const neckLength = 500;
+            const startX = centerX + offsetX - Math.cos(angle) * 100;
+            const startY = centerY + offsetY - Math.sin(angle) * 100;
+            const endX = centerX + offsetX + Math.cos(angle) * neckLength;
+            const endY = centerY + offsetY + Math.sin(angle) * neckLength;
 
-            g.lineBetween(x1, y1, x2, y2);
+            // Check if this is the active string
+            const isActive = i === activeString;
+
+            if (isActive && this.currentHz > 50) {
+                // Active string - bright glowing with note color
+                const noteColor = this.getNoteColor(this.currentNote);
+                const pulse = Math.sin(time / 100) * 0.3 + 0.7;
+
+                // Outer glow
+                g.lineStyle(10, noteColor, 0.2 * pulse);
+                g.lineBetween(startX, startY, endX, endY);
+
+                // Middle glow
+                g.lineStyle(6, noteColor, 0.5 * pulse);
+                g.lineBetween(startX, startY, endX, endY);
+
+                // Core bright line
+                g.lineStyle(3, noteColor, pulse);
+                g.lineBetween(startX, startY, endX, endY);
+            } else {
+                // Inactive string - subtle cyan
+                // Outer glow
+                g.lineStyle(4, 0x00ffff, 0.1);
+                g.lineBetween(startX, startY, endX, endY);
+
+                // Core line
+                g.lineStyle(2, 0x00ffff, 0.3);
+                g.lineBetween(startX, startY, endX, endY);
+            }
         }
     }
 
     drawARHandVisualization(hand, time) {
         const g = this.handGraphics;
 
-        // Get fingertip positions
-        const tips = [4, 8, 12, 16, 20]; // Thumb to Pinky
-        const knuckles = [2, 5, 9, 13, 17]; // Knuckle positions
-        const palm = hand[0]; // Wrist/palm center
+        // Scale factors for canvas
+        const scaleX = 1000;
+        const scaleY = 800;
 
-        const palmX = palm.x * 1000;
-        const palmY = palm.y * 800;
+        // Draw bones (connections) - Use exact same structure as HandGestures
+        const drawBone = (p1, p2, color = 0x00ffff, alpha = 0.5, width = 2) => {
+            g.lineStyle(width, color, alpha);
+            g.lineBetween(p1.x * scaleX, p1.y * scaleY, p2.x * scaleX, p2.y * scaleY);
+        };
 
-        // Draw palm center with rotating HUD
-        g.lineStyle(2, 0x00ffff, 0.8);
-        const pulseSize = 30 + Math.sin(time / 200) * 5;
-        g.strokeCircle(palmX, palmY, pulseSize);
+        // Thumb
+        drawBone(hand[0], hand[1], 0xaaffff, 0.4, 1);
+        drawBone(hand[1], hand[2], 0xaaffff, 0.5, 1);
+        drawBone(hand[2], hand[3], 0xaaffff, 0.6, 2);
+        drawBone(hand[3], hand[4], 0xaaffff, 0.7, 2);
 
-        // Draw rotating arc around palm
-        const arcAngle = (time / 1000) % (Math.PI * 2);
-        g.lineStyle(3, 0xff00ff, 1);
-        g.arc(palmX, palmY, 45, arcAngle, arcAngle + Math.PI / 2);
-        g.arc(palmX, palmY, 45, arcAngle + Math.PI, arcAngle + Math.PI * 1.5);
+        // Index
+        drawBone(hand[0], hand[5], 0xaaffff, 0.4, 1);
+        drawBone(hand[5], hand[6], 0xaaffff, 0.5, 1);
+        drawBone(hand[6], hand[7], 0xaaffff, 0.6, 2);
+        drawBone(hand[7], hand[8], 0xaaffff, 0.7, 2);
 
-        // Draw connection lines from palm to knuckles
-        knuckles.forEach(idx => {
-            const p = hand[idx];
-            const x = p.x * 1000;
-            const y = p.y * 800;
+        // Middle
+        drawBone(hand[0], hand[9], 0xaaffff, 0.4, 1);
+        drawBone(hand[9], hand[10], 0xaaffff, 0.5, 1);
+        drawBone(hand[10], hand[11], 0xaaffff, 0.6, 2);
+        drawBone(hand[11], hand[12], 0xaaffff, 0.7, 2);
 
-            g.lineStyle(1, 0x00ffff, 0.3);
-            g.lineBetween(palmX, palmY, x, y);
-        });
+        // Ring
+        drawBone(hand[0], hand[13], 0xaaffff, 0.4, 1);
+        drawBone(hand[13], hand[14], 0xaaffff, 0.5, 1);
+        drawBone(hand[14], hand[15], 0xaaffff, 0.6, 2);
+        drawBone(hand[15], hand[16], 0xaaffff, 0.7, 2);
 
-        // Draw fingertips with circular HUD elements
-        tips.forEach((tipIdx, i) => {
-            const p = hand[tipIdx];
-            const x = p.x * 1000;
-            const y = p.y * 800;
+        // Pinky
+        drawBone(hand[0], hand[17], 0xaaffff, 0.4, 1);
+        drawBone(hand[17], hand[18], 0xaaffff, 0.5, 1);
+        drawBone(hand[18], hand[19], 0xaaffff, 0.6, 2);
+        drawBone(hand[19], hand[20], 0xaaffff, 0.7, 2);
 
-            // Pulsing circle
-            const phase = time / 300 + i * 0.5;
-            const size = 8 + Math.sin(phase) * 2;
+        // Palm connections
+        drawBone(hand[5], hand[9], 0xaaffff, 0.3, 1);
+        drawBone(hand[9], hand[13], 0xaaffff, 0.3, 1);
+        drawBone(hand[13], hand[17], 0xaaffff, 0.3, 1);
 
-            g.fillStyle(0x00ff88, 0.6);
-            g.fillCircle(x, y, size);
+        // Draw joints (all 21 landmarks)
+        hand.forEach((p, index) => {
+            const x = p.x * scaleX;
+            const y = p.y * scaleY;
 
-            g.lineStyle(2, 0x00ff88, 1);
-            g.strokeCircle(x, y, size + 5);
+            // Fingertips get special treatment
+            if ([4, 8, 12, 16, 20].includes(index)) {
+                this.drawTechGear(g, x, y, 12, time / 1000 + index * 0.5, 0x00ff88);
+            } else {
+                // Regular joints - small glowing dots
+                g.fillStyle(0xffffff, 0.8);
+                g.fillCircle(x, y, 3);
 
-            // Orbital rings
-            g.lineStyle(1, 0xffffff, 0.4);
-            g.strokeCircle(x, y, 15);
-
-            // Draw connection between finger joints
-            if (tipIdx > 4) { // Not thumb
-                const mcp = tipIdx - 3; // Knuckle
-                const pip = tipIdx - 2; // Middle joint
-                const dip = tipIdx - 1; // Top joint
-
-                g.lineStyle(2, 0x00ffff, 0.6);
-                const joints = [mcp, pip, dip, tipIdx].map(j => ({
-                    x: hand[j].x * 1000,
-                    y: hand[j].y * 800
-                }));
-
-                for (let j = 0; j < joints.length - 1; j++) {
-                    g.lineBetween(joints[j].x, joints[j].y, joints[j + 1].x, joints[j + 1].y);
-
-                    // Draw small circles at joints
-                    g.fillStyle(0xffffff, 0.8);
-                    g.fillCircle(joints[j].x, joints[j].y, 3);
-                }
+                g.lineStyle(1, 0xffffff, 0.6);
+                g.strokeCircle(x, y, 5);
             }
         });
 
-        // Draw hand skeleton overlay (connections)
-        const connections = [
-            [0, 1], [1, 2], [2, 3], [3, 4], // Thumb
-            [0, 5], [5, 6], [6, 7], [7, 8], // Index
-            [0, 9], [9, 10], [10, 11], [11, 12], // Middle
-            [0, 13], [13, 14], [14, 15], [15, 16], // Ring
-            [0, 17], [17, 18], [18, 19], [19, 20], // Pinky
-            [5, 9], [9, 13], [13, 17] // Palm
-        ];
+        // Palm center with rotating HUD
+        const wrist = hand[0];
+        const middle = hand[9];
+        const palmX = ((wrist.x + middle.x) / 2) * scaleX;
+        const palmY = ((wrist.y + middle.y) / 2) * scaleY;
 
-        g.lineStyle(1, 0xffffff, 0.2);
-        connections.forEach(([a, b]) => {
-            const p1 = hand[a];
-            const p2 = hand[b];
-            g.lineBetween(p1.x * 1000, p1.y * 800, p2.x * 1000, p2.y * 800);
-        });
+        // Large rotating gear at palm
+        this.drawTechGear(g, palmX, palmY, 35, -time / 500, 0x00ffff);
+
+        // Pulsing ring
+        const pulseSize = 45 + Math.sin(time / 200) * 5;
+        g.lineStyle(2, 0x00ffff, 0.3);
+        g.strokeCircle(palmX, palmY, pulseSize);
+    }
+
+    drawTechGear(g, x, y, radius, rotation, color) {
+        // Outer interrupted circle (segmented arc)
+        const segments = 4;
+        const arcLen = (Math.PI * 2) / segments;
+        const gap = 0.2;
+
+        g.lineStyle(2, color, 1);
+        for (let i = 0; i < segments; i++) {
+            const start = rotation + (i * arcLen) + gap;
+            const end = rotation + ((i + 1) * arcLen) - gap;
+            g.beginPath();
+            g.arc(x, y, radius, start, end);
+            g.strokePath();
+        }
+
+        // Inner detail circle
+        g.lineStyle(1, color, 0.5);
+        g.strokeCircle(x, y, radius * 0.5);
+
+        // Crosshair in center
+        const r2 = radius * 0.3;
+        g.lineStyle(1, color, 0.7);
+        g.lineBetween(x - r2, y, x + r2, y);
+        g.lineBetween(x, y - r2, x, y + r2);
+    }
+
+    drawVisualTuner(time) {
+        if (this.currentHz < 50) return;
+
+        const g = this.tunerGraphics;
+        const centerX = 500;
+        const centerY = 150;
+        const barWidth = 300;
+        const barHeight = 15;
+
+        // Background bar
+        g.fillStyle(0x000000, 0.6);
+        g.fillRoundedRect(centerX - barWidth / 2 - 5, centerY - barHeight / 2 - 5,
+            barWidth + 10, barHeight + 10, 8);
+
+        // Get the target frequency for the detected note
+        const targetHz = this.noteToHz(this.currentNote);
+        const diff = this.currentHz - targetHz;
+
+        // Map difference to position (-50 cents to +50 cents)
+        const cents = 1200 * Math.log2(this.currentHz / targetHz);
+        const normalizedPos = Phaser.Math.Clamp(cents / 50, -1, 1);
+
+        // Draw center target line
+        g.lineStyle(2, 0xffffff, 0.5);
+        g.lineBetween(centerX, centerY - barHeight, centerX, centerY + barHeight);
+
+        // Draw tick marks
+        for (let i = -2; i <= 2; i++) {
+            if (i === 0) continue;
+            const tickX = centerX + (i * barWidth / 4);
+            g.lineStyle(1, 0x888888, 0.4);
+            g.lineBetween(tickX, centerY - barHeight / 2, tickX, centerY + barHeight / 2);
+        }
+
+        // Draw needle
+        const needleX = centerX + (normalizedPos * barWidth / 2);
+        const isInTune = Math.abs(cents) < 5;
+        const needleColor = isInTune ? 0x00ff88 : 0xff5500;
+
+        // Needle glow
+        g.fillStyle(needleColor, 0.3);
+        g.fillCircle(needleX, centerY, 15);
+
+        // Needle
+        g.fillStyle(needleColor, 1);
+        g.fillCircle(needleX, centerY, 8);
+
+        // Needle line
+        g.lineStyle(3, needleColor, 1);
+        g.lineBetween(needleX, centerY - barHeight, needleX, centerY + barHeight);
+
+        // Cent display
+        const centsText = (cents > 0 ? '+' : '') + Math.floor(cents);
+        const tunerText = this.add.text(centerX, centerY + 30, centsText + '¢', {
+            fontFamily: 'Courier New, monospace',
+            fontSize: '14px',
+            fill: isInTune ? '#00ff88' : '#ff5500'
+        }).setOrigin(0.5);
+
+        tunerText.setShadow(0, 0, 10, isInTune ? '#00ff88' : '#ff5500', false, true);
+
+        // Destroy after drawing (will redraw next frame)
+        this.time.delayedCall(16, () => tunerText.destroy());
     }
 
     drawWaveform(time) {
-        if (!this.waveformData || this.waveformData.length === 0) return;
+        if (!this.waveformData || this.waveformData.length === 0) {
+            return;
+        }
 
         const g = this.waveformGraphics;
         const waveX = 50;
-        const waveY = 650;
+        const waveY = 680;
         const waveWidth = 900;
-        const waveHeight = 100;
-
-        // Background box
-        g.fillStyle(0x000000, 0.5);
-        g.fillRect(waveX - 10, waveY - 10, waveWidth + 20, waveHeight + 20);
+        const waveHeight = 80;
 
         // Get color based on current note
-        const color = this.getNoteColor(this.currentNote);
+        const color = this.currentNote && this.currentHz > 50
+            ? this.getNoteColor(this.currentNote)
+            : 0x00ffff;
 
-        // Draw waveform
-        g.lineStyle(2, color, 0.8);
-
+        // Draw waveform with glow effect
         const step = waveWidth / this.waveformData.length;
 
-        for (let i = 0; i < this.waveformData.length - 1; i++) {
+        // Sample every nth point for performance
+        const sampleRate = Math.max(1, Math.floor(this.waveformData.length / 500));
+
+        // Outer glow
+        g.lineStyle(6, color, 0.15);
+        for (let i = 0; i < this.waveformData.length - sampleRate; i += sampleRate) {
             const x1 = waveX + i * step;
             const y1 = waveY + waveHeight / 2 + (this.waveformData[i] * waveHeight / 2);
-            const x2 = waveX + (i + 1) * step;
-            const y2 = waveY + waveHeight / 2 + (this.waveformData[i + 1] * waveHeight / 2);
-
+            const x2 = waveX + (i + sampleRate) * step;
+            const y2 = waveY + waveHeight / 2 + (this.waveformData[i + sampleRate] * waveHeight / 2);
             g.lineBetween(x1, y1, x2, y2);
         }
 
-        // Draw center line
-        g.lineStyle(1, 0x444444, 0.5);
+        // Main waveform
+        g.lineStyle(3, color, 0.8);
+        for (let i = 0; i < this.waveformData.length - sampleRate; i += sampleRate) {
+            const x1 = waveX + i * step;
+            const y1 = waveY + waveHeight / 2 + (this.waveformData[i] * waveHeight / 2);
+            const x2 = waveX + (i + sampleRate) * step;
+            const y2 = waveY + waveHeight / 2 + (this.waveformData[i + sampleRate] * waveHeight / 2);
+            g.lineBetween(x1, y1, x2, y2);
+        }
+
+        // Center line
+        g.lineStyle(1, 0x444444, 0.4);
         g.lineBetween(waveX, waveY + waveHeight / 2, waveX + waveWidth, waveY + waveHeight / 2);
+    }
+
+    noteToHz(note) {
+        const noteMap = {
+            'C': 261.63, 'C#': 277.18, 'D': 293.66, 'D#': 311.13,
+            'E': 329.63, 'F': 349.23, 'F#': 369.99, 'G': 392.00,
+            'G#': 415.30, 'A': 440.00, 'A#': 466.16, 'B': 493.88
+        };
+        return noteMap[note] || 440;
     }
 
     hzToNote(frequency) {
@@ -375,18 +722,9 @@ export default class GuitarScene extends Phaser.Scene {
 
     getNoteColor(note) {
         const colorMap = {
-            'C': 0xff0000,   // Red
-            'C#': 0xff4400,  // Orange-Red
-            'D': 0xff8800,   // Orange
-            'D#': 0xffcc00,  // Yellow-Orange
-            'E': 0xffff00,   // Yellow
-            'F': 0x88ff00,   // Yellow-Green
-            'F#': 0x00ff00,  // Green
-            'G': 0x00ff88,   // Cyan-Green
-            'G#': 0x00ffff,  // Cyan
-            'A': 0x0088ff,   // Blue
-            'A#': 0x4400ff,  // Purple-Blue
-            'B': 0x8800ff    // Purple
+            'C': 0xff0000,   'C#': 0xff4400,  'D': 0xff8800,   'D#': 0xffcc00,
+            'E': 0xffff00,   'F': 0x88ff00,   'F#': 0x00ff00,  'G': 0x00ff88,
+            'G#': 0x00ffff,  'A': 0x0088ff,   'A#': 0x4400ff,  'B': 0x8800ff
         };
         return colorMap[note] || 0xffffff;
     }
