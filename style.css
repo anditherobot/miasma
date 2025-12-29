@@ -182,3 +182,26 @@ circle {
         inset 0 0 20px rgba(0, 255, 255, 0.2);
     transition: all 0.3s ease;
 }
+
+/* Face Video Feed Styling */
+.face-video-feed {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scaleX(-1);
+    opacity: 0.5;
+    pointer-events: none;
+    width: 90vw;
+    height: 90vh;
+    max-width: 1400px;
+    max-height: 1000px;
+    object-fit: cover;
+    z-index: 0;
+    border-radius: 10px;
+    box-shadow:
+        0 0 30px rgba(255, 100, 0, 0.6),
+        0 0 60px rgba(255, 150, 50, 0.4),
+        inset 0 0 30px rgba(255, 100, 0, 0.3);
+    transition: all 0.3s ease;
+    filter: contrast(1.2) brightness(0.9);
+}
