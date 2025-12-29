@@ -5,7 +5,7 @@ export default class DebugUI {
         this.setupStyles();
         this.createElements();
         document.body.appendChild(this.container);
-        
+
         this.visible = true;
         this.toggleKey = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.BACKTICK); // ` key to toggle
     }
@@ -51,24 +51,8 @@ export default class DebugUI {
         this.actionsDiv.style.gap = '5px';
         this.container.appendChild(this.actionsDiv);
 
-        this.addButton('Toggle Infection', () => {
-            if (this.scene.player.isInfected) this.scene.player.cleanse();
-            else this.scene.player.isInfected = true;
-        });
-
-        this.addButton('Reset Level', () => this.scene.scene.restart());
-        
-        this.addButton('Kill Player', () => this.scene.player.die());
-        
-        this.addButton('Toggle Physics', () => {
-             if (this.scene.physics.world.drawDebug) {
-                 this.scene.physics.world.debugGraphic.clear();
-                 this.scene.physics.world.drawDebug = false;
-             } else {
-                 this.scene.physics.world.createDebugGraphic();
-                 this.scene.physics.world.drawDebug = true;
-             }
-        });
+        this.addButton('Reset Calibration', () => this.scene.guitarState.resetCalibration());
+        this.addButton('Restart Scene', () => this.scene.scene.restart());
     }
 
     addButton(label, onClick) {
@@ -96,21 +80,44 @@ export default class DebugUI {
 
         if (!this.visible) return;
 
-        const player = this.scene.player;
-        const sentinel = this.scene.sentinel;
-        
-        const dist = Phaser.Math.Distance.Between(player.x, player.y, sentinel.x, sentinel.y);
+        const state = this.scene.guitarState;
+        const landmarks = state.handLandmarks;
 
-        this.statsDiv.innerText = [
+        let stats = [
             `FPS: ${Math.round(this.scene.game.loop.actualFps)}`,
-            `Player Pos: (${Math.round(player.x)}, ${Math.round(player.y)})`,
-            `Status: ${player.isInfected ? 'INFECTED' : 'NORMAL'}`,
-            `Mass: ${Math.floor(player.massIntegrity * 100)}%`,
-            `Awareness: ${Math.floor(sentinel.awareness * 100)}%`,
-            `Sentinel Dist: ${Math.round(dist)}`,
-            `Critical Timer: ${Math.round(sentinel.criticalTimer)}`,
-            `Missiles: ${sentinel.missiles.countActive()}`
-        ].join('\n');
+            `-------------------`,
+            `HAND TRACKING:`
+        ];
+
+        if (landmarks && landmarks.length > 0) {
+            // Display specific key landmarks (Wrist, Thumb tip, Index tip)
+            const wrist = landmarks[0];
+            const thumb = landmarks[4];
+            const index = landmarks[8];
+
+            stats.push(`Wrist: [${wrist.x.toFixed(2)}, ${wrist.y.toFixed(2)}]`);
+            stats.push(`Index: [${index.x.toFixed(2)}, ${index.y.toFixed(2)}]`);
+
+            // Interaction Logic: Pinch Detection
+            const dist = Phaser.Math.Distance.Between(
+                thumb.x, thumb.y,
+                index.x, index.y
+            );
+
+            const isPinching = dist < 0.08;
+            stats.push(`-------------------`);
+            stats.push(`ACTION: ${isPinching ? '● PINCHING' : '○ OPEN'}`);
+            stats.push(`PINCH DIST: ${dist.toFixed(3)}`);
+            stats.push(`-------------------`);
+            stats.push(`CALIBRATED: ${state.isCalibrated ? 'YES' : 'NO'}`);
+            if (state.isCalibrated) {
+                stats.push(`FRET SPACING: ${state.fretboard.spacing.toFixed(1)}`);
+            }
+        } else {
+            stats.push(`(NO HAND DETECTED)`);
+        }
+
+        this.statsDiv.innerText = stats.join('\n');
     }
 
     destroy() {
