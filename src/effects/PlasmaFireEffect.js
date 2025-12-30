@@ -6,6 +6,7 @@
  */
 
 import { BaseEffect } from './BaseEffect.js';
+import AudioManager from '../core/AudioManager.js';
 
 export class PlasmaFireEffect extends BaseEffect {
     constructor() {
@@ -19,6 +20,8 @@ export class PlasmaFireEffect extends BaseEffect {
 
         this.canvas = null;
         this.ctx = null;
+        this.audioLevel = 0.5;        // Current audio level (0.3-1.3 range)
+        this.audioSmoothing = 0.15;   // Exponential smoothing factor
     }
 
     /**
@@ -45,6 +48,13 @@ export class PlasmaFireEffect extends BaseEffect {
         }
 
         this.ctx = this.canvas.getContext('2d');
+
+        // Start microphone for audio reactivity
+        if (!AudioManager.analyser) {
+            AudioManager.startMicrophone().catch(err => {
+                console.warn('Microphone not available:', err);
+            });
+        }
     }
 
     /**
@@ -70,51 +80,35 @@ export class PlasmaFireEffect extends BaseEffect {
 
     /**
      * Render plasma shader within face contour mask
-     * Extracted from FaceShaderScene.js lines 184-231
+     * Enhanced with glow, jitter, and audio reactivity
      */
     renderShaderOnFace(time, faceLandmarks, faceBox, video) {
         const ctx = this.ctx;
         const canvas = this.canvas;
 
-        // Create a mask for the face region
-        ctx.save();
+        // Update audio level with smoothing
+        const currentAudioLevel = this.calculateAudioLevel();
+        this.audioLevel += (currentAudioLevel - this.audioLevel) * this.audioSmoothing;
 
-        // Convert normalized coordinates to canvas coordinates
+        // Calculate pulse animation
+        const pulse = Math.sin(time / 100) * 0.3 + 0.7;
+
+        // Create contour path with jitter
+        const contourPath = this.createJitteredContourPath(faceLandmarks, time);
+
+        // Render multi-layer glow BEFORE clipping
+        this.renderContourGlow(ctx, contourPath, time, pulse, this.audioLevel);
+
+        // Create clip mask and render plasma (existing logic)
+        ctx.save();
+        ctx.clip(contourPath);
+
         const x = faceBox.x * canvas.width;
         const y = faceBox.y * canvas.height;
         const w = faceBox.width * canvas.width;
         const h = faceBox.height * canvas.height;
 
-        // Create face mesh path for masking
-        ctx.beginPath();
-
-        // Use face contour landmarks (indices for face outline)
-        const contourIndices = [
-            10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288,
-            397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136,
-            172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109
-        ];
-
-        contourIndices.forEach((idx, i) => {
-            if (idx < faceLandmarks.length) {
-                const landmark = faceLandmarks[idx];
-                const px = landmark.x * canvas.width;
-                const py = landmark.y * canvas.height;
-
-                if (i === 0) {
-                    ctx.moveTo(px, py);
-                } else {
-                    ctx.lineTo(px, py);
-                }
-            }
-        });
-
-        ctx.closePath();
-        ctx.clip();
-
-        // Render plasma effect in the face region
         this.renderPlasmaEffect(ctx, time / 1000, x, y, w, h);
-
         ctx.restore();
     }
 
@@ -210,5 +204,125 @@ export class PlasmaFireEffect extends BaseEffect {
         }
         this.canvas = null;
         this.ctx = null;
+    }
+
+    /**
+     * Calculate audio level from microphone
+     */
+    calculateAudioLevel() {
+        if (!AudioManager.analyser) {
+            return 0.5; // Neutral if no audio
+        }
+
+        const bufferLength = AudioManager.analyser.fftSize;
+        const dataArray = new Float32Array(bufferLength);
+        AudioManager.analyser.getFloatTimeDomainData(dataArray);
+
+        // Calculate RMS (root mean square)
+        let sum = 0;
+        for (let i = 0; i < bufferLength; i++) {
+            sum += dataArray[i] * dataArray[i];
+        }
+        const rms = Math.sqrt(sum / bufferLength);
+
+        // Normalize and scale (0.3-1.3 range for always-visible effect)
+        return 0.3 + Math.min(1.0, rms * 10);
+    }
+
+    /**
+     * Convert HSL to RGB color
+     */
+    hslToRgb(h, s, l) {
+        s /= 100;
+        l /= 100;
+        const k = n => (n + h / 30) % 12;
+        const a = s * Math.min(l, 1 - l);
+        const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+        const r = Math.round(255 * f(0));
+        const g = Math.round(255 * f(8));
+        const b = Math.round(255 * f(4));
+        return `rgb(${r}, ${g}, ${b})`;
+    }
+
+    /**
+     * Generate dynamic fire color based on time and temperature
+     */
+    getFireColor(time, temperature = 0.5) {
+        // Base hue oscillates red-orange (5-25 degrees)
+        const baseHue = 15 + Math.sin(time / 500) * 10;
+
+        // Temperature affects saturation and lightness
+        // Hot (loud) = brighter/whiter, Cool (quiet) = deeper red
+        const saturation = 80 - (temperature * 20); // 60-80%
+        const lightness = 40 + (temperature * 20);  // 40-60%
+
+        return this.hslToRgb(baseHue, saturation, lightness);
+    }
+
+    /**
+     * Create face contour path with organic jitter
+     */
+    createJitteredContourPath(faceLandmarks, time) {
+        const canvas = this.canvas;
+        const path = new Path2D();
+
+        const contourIndices = [
+            10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288,
+            397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136,
+            172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109
+        ];
+
+        contourIndices.forEach((idx, i) => {
+            if (idx < faceLandmarks.length) {
+                const landmark = faceLandmarks[idx];
+
+                // Add organic jitter (3 pixels, smooth over 50ms intervals)
+                const jitterSeed = Math.floor(time / 50) + idx;
+                const jitterX = (Math.sin(jitterSeed * 12.9898) * 0.5 + 0.5 - 0.5) * 3;
+                const jitterY = (Math.sin(jitterSeed * 78.233) * 0.5 + 0.5 - 0.5) * 3;
+
+                const px = landmark.x * canvas.width + jitterX;
+                const py = landmark.y * canvas.height + jitterY;
+
+                if (i === 0) {
+                    path.moveTo(px, py);
+                } else {
+                    path.lineTo(px, py);
+                }
+            }
+        });
+
+        path.closePath();
+        return path;
+    }
+
+    /**
+     * Render multi-layer glow around face contour
+     */
+    renderContourGlow(ctx, contourPath, time, pulse, audioLevel) {
+        // Calculate color temperature from audio (louder = hotter/brighter)
+        const colorTemp = 0.5 + (audioLevel - 0.5) * 0.5; // 0.25-1.0 range
+        const glowColor = this.getFireColor(time, colorTemp);
+
+        // Intensity modulated by pulse and audio
+        const intensity = pulse * audioLevel;
+
+        // Render 3 glow layers (outer to inner)
+        const layers = [
+            { width: 12, alpha: 0.15 },  // Outer soft glow
+            { width: 8,  alpha: 0.35 },  // Middle glow
+            { width: 4,  alpha: 0.7  }   // Inner bright edge
+        ];
+
+        ctx.save();
+        ctx.strokeStyle = glowColor;
+
+        layers.forEach(layer => {
+            ctx.globalAlpha = layer.alpha * intensity;
+            ctx.lineWidth = layer.width;
+            ctx.stroke(contourPath);
+        });
+
+        ctx.restore();
     }
 }
