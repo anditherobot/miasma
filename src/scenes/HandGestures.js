@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { handTrackingInstance } from '../core/HandTracking.js';
 import { addNavigationButtons } from '../ui/NavigationButtons.js';
+import { GestureDisplay } from '../ui/GestureDisplay.js';
 
 export default class HandGestures extends Phaser.Scene {
     constructor() { super('HandGestures'); }
@@ -8,6 +9,9 @@ export default class HandGestures extends Phaser.Scene {
     create() {
         // Add Navigation Buttons
         addNavigationButtons(this);
+        
+        // Initialize Gesture Display
+        this.gestureDisplay = new GestureDisplay(this);
 
         // --- ASSETS & STYLES ---
         this.styles = {
@@ -52,6 +56,9 @@ export default class HandGestures extends Phaser.Scene {
     }
 
     update(time, delta) {
+        // Update gesture display
+        this.gestureDisplay.update(time);
+        
         this.mechGraphics.clear();
         this.cubeGraphics.clear();
         

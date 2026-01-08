@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gesture Sandbox</title>
+  <style>
+    body { margin: 0; background: #0c1118; color: #e5f7ff; font-family: monospace; overflow: hidden; }
+    #hud { position: fixed; top: 10px; left: 10px; padding: 10px; background: rgba(0,0,0,0.6); border: 1px solid #0ff; border-radius: 6px; width: 320px; z-index: 1100; }
+    #tap-panel { position: fixed; top: 10px; right: 10px; padding: 10px; background: rgba(0,0,0,0.7); border: 2px solid #ffff00; border-radius: 6px; width: 280px; max-height: 400px; z-index: 1100; overflow-y: auto; }
+    #tap-panel h3 { margin: 0 0 8px 0; color: #ffff00; font-size: 14px; }
+    .tap-item { background: rgba(255, 255, 0, 0.1); padding: 6px; margin: 4px 0; border-radius: 4px; border-left: 3px solid #ffff00; font-size: 11px; }
+    .tap-item-time { color: #888; font-size: 10px; }
+    #blocks { position: fixed; bottom: 20px; left: 20px; display: flex; gap: 12px; }
+    .block { width: 80px; height: 80px; background: #1c2835; border: 2px solid #304a63; border-radius: 10px; transition: background 0.2s, border-color 0.2s; }
+    .pinched { background: #ff5555; border-color: #ffaaaa; }
+    .hovered { background: #55aaff; border-color: #aaddff; }
+    video { position: fixed; bottom: 10px; right: 10px; width: 200px; opacity: 0.4; z-index: 900; }
+  </style>
+</head>
+<body>
+  <div id="hud">Gesture Sandbox
+    <div id="status">Waiting for camera...</div>
+    <div id="metrics"></div>
+  </div>
+  <div id="tap-panel">
+    <h3>THUMB TAP LOG</h3>
+    <div id="tap-list"></div>
+  </div>
+  <div id="blocks">
+    <div class="block" data-id="a"></div>
+    <div class="block" data-id="b"></div>
+    <div class="block" data-id="c"></div>
+  </div>
+  <script type="module">
+    import { CameraFeed } from '/src/gestures/camera_feed.js';
+    import { SmoothFilter } from '/src/gestures/jitter_filter.js';
+    import { isPalmOpen, isPinch, isThumbTap } from '/src/gestures/pose_library.js';
+    import { MotionTracker, expansionRate } from '/src/gestures/motion_tracker.js';
+    import { centroid } from '/src/gestures/spatial_math.js';
+    import { GestureEventBus } from '/src/gestures/gesture_events.js';
+    import { CursorOverlay } from '/src/gestures/cursor_overlay.js';
+
+    const hudStatus = document.getElementById('status');
+    const hudMetrics = document.getElementById('metrics');
+    const tapList = document.getElementById('tap-list');
+    const blocks = document.querySelectorAll('.block');
+
+    const bus = new GestureEventBus();
+    const mirror = new URLSearchParams(location.search).get('mirror') !== '0';
+    const overlay = new CursorOverlay({ mirror });
+    const cam = new CameraFeed({ maxHands: 2 });
+    const smooth = new SmoothFilter(0.35);
+    const tracker = new MotionTracker();
+
+    let prevDist = null;
+    let lastDt = 16;
+    let lastTap = null;
+    const holdTracker = new Map(); // key: "hand-finger", value: { startTime, anchor, fired }
+    const HOLD_THRESHOLD_MS = 1500;
+
+    function updateBlocks(state) {
+      blocks.forEach((b) => b.classList.remove('pinched', 'hovered'));
+      if (state.pinch) {
+        blocks[0].classList.add('pinched');
+      }
+      if (state.hover) {
+        blocks[1].classList.add('hovered');
+      }
+    }
+
+    bus.on('gesture-pinch', () => updateBlocks({ pinch: true }));
+    bus.on('gesture-hover', () => updateBlocks({ hover: true }));
+
+    function addTapToPanel(hand, finger, duration) {
+      const now = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 });
+      const durationStr = duration ? ` (${(duration / 1000).toFixed(1)}s)` : '';
+      lastTap = { hand, finger, time: now, duration };
+      tapList.innerHTML = `
+        <div class="tap-item">
+          <div><strong>Hand ${lastTap.hand} + ${lastTap.finger}${durationStr}</strong></div>
+          <div class="tap-item-time">${lastTap.time}</div>
+        </div>
+      `;
+    }
+
+    cam.onResults((hands) => {
+      const now = Date.now();
+      const smoothed = hands.map((h) => smooth.apply(h));
+      const motion = tracker.update(smoothed);
+
+      // If mirror is off, keep video normal; if on, camera feed is flipped and overlay mirrors X.
+      cam.mirror = mirror;
+
+      const anchors = smoothed.map((hand) => {
+        if (!hand) return null;
+        const fingers = [4, 8, 12, 16, 20].map((i) => hand[i]);
+        return centroid(fingers);
+      });
+
+      const presentHands = new Set();
+
+      // Track holds per hand for index/middle/ring/pinky
+      smoothed.forEach((hand, idx) => {
+        if (!hand) return;
+        presentHands.add(idx);
+        const activeHolds = [8, 12, 16, 20].filter((tip) => isThumbTap(hand, tip, { tapThreshold: 0.045 }));
+        
+        // Update existing holds or start new ones
+        activeHolds.forEach((tip) => {
+          const key = `${idx}-${tip}`;
+          if (!holdTracker.has(key)) {
+            holdTracker.set(key, { startTime: now, anchor: hand[tip], fired: false });
+          } else {
+            const existing = holdTracker.get(key);
+            holdTracker.set(key, { ...existing, anchor: hand[tip] });
+          }
+        });
+
+        // Check for completed holds (finger lifted)
+        const allKeys = Array.from(holdTracker.keys()).filter((k) => k.startsWith(`${idx}-`));
+        allKeys.forEach((key) => {
+          const [handIdx, tipStr] = key.split('-');
+          const tip = parseInt(tipStr);
+          
+          // If this finger is no longer held
+          if (!activeHolds.includes(tip)) {
+            const hold = holdTracker.get(key);
+            const duration = now - hold.startTime;
+            
+            if (duration >= HOLD_THRESHOLD_MS && !hold.fired) {
+              const fingerName = { 8: 'index', 12: 'middle', 16: 'ring', 20: 'pinky' }[tip];
+              overlay.popAt(hold.anchor);
+              addTapToPanel(idx, fingerName, duration);
+              const detail = { hand: idx, finger: fingerName, anchor: hold.anchor, duration };
+              bus.emit('gesture-thumb-tap', detail);
+            }
+            
+            holdTracker.delete(key);
+          } else {
+            // Still held: emit once when crossing threshold
+            const hold = holdTracker.get(key);
+            const duration = now - hold.startTime;
+            if (duration >= HOLD_THRESHOLD_MS && !hold.fired) {
+              const fingerName = { 8: 'index', 12: 'middle', 16: 'ring', 20: 'pinky' }[tip];
+              overlay.popAt(hold.anchor);
+              addTapToPanel(idx, fingerName, duration);
+              const detail = { hand: idx, finger: fingerName, anchor: hold.anchor, duration };
+              bus.emit('gesture-thumb-tap', detail);
+              holdTracker.set(key, { ...hold, fired: true });
+            }
+          }
+        });
+      });
+
+      // Clear holds for hands that disappeared (no false replays on return)
+      const staleKeys = Array.from(holdTracker.keys()).filter((key) => {
+        const handIdx = parseInt(key.split('-')[0], 10);
+        return !presentHands.has(handIdx);
+      });
+      staleKeys.forEach((key) => holdTracker.delete(key));
+
+      const firstHand = smoothed[0];
+      const secondHand = smoothed[1];
+
+      const isOpen = firstHand ? isPalmOpen(firstHand) : false;
+      const pinch = firstHand ? isPinch(firstHand) : false;
+      const vel = motion.get(0) || { vx: 0, vy: 0, dt: lastDt };
+      lastDt = vel.dt || 16;
+
+      let expandRate = 0;
+      if (firstHand && secondHand) {
+        const exp = expansionRate(firstHand, secondHand, prevDist, lastDt);
+        expandRate = exp.rate;
+        prevDist = exp.dist;
+      }
+
+      overlay.draw({ hands: smoothed, anchors });
+
+      // Emit events
+      if (pinch) bus.emit('gesture-pinch', { anchor: anchors[0], confidence: 1 });
+      else if (isOpen && vel.vy < -0.01) bus.emit('gesture-dismiss', { anchor: anchors[0], vy: vel.vy });
+      else if (expandRate > 0.0005) bus.emit('gesture-expand', { rate: expandRate, anchor: anchors[0] });
+      else bus.emit('gesture-hover', { anchor: anchors[0] });
+
+      // HUD
+      hudStatus.textContent = `Hands: ${smoothed.length} | Gesture: ${pinch ? 'PINCH' : isOpen ? 'PALM_OPEN' : 'NEUTRAL'}`;
+      hudMetrics.innerHTML = `
+        <div>vy: ${vel.vy.toFixed(4)}</div>
+        <div>expandRate: ${expandRate.toFixed(5)}</div>
+        <div>anchor: ${anchors[0] ? `${anchors[0].x.toFixed(3)}, ${anchors[0].y.toFixed(3)}` : 'n/a'}</div>
+      `;
+    });
+
+    cam.initialize().then(() => {
+      hudStatus.textContent = 'Camera ready. Show your hand.';
+    }).catch((err) => {
+      hudStatus.textContent = 'Camera error: ' + err;
+      console.error(err);
+    });
+  </script>
+</body>
+</html>

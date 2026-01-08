@@ -3,6 +3,8 @@ import { handTrackingInstance } from '../core/HandTracking.js';
 import { addNavigationButtons } from '../ui/NavigationButtons.js';
 import { speechInput } from '../core/SpeechInput.js';
 import { BoxManager } from '../systems/BoxManager.js';
+import { LayerPanel } from '../ui/LayerPanel.js';
+import { GestureDisplay } from '../ui/GestureDisplay.js';
 
 export default class SoftCanvasScene extends Phaser.Scene {
     constructor() {
@@ -54,6 +56,20 @@ export default class SoftCanvasScene extends Phaser.Scene {
             trailLengthMs: 220
         };
         
+        // Background color cycle
+        this.bgColors = [
+            0x0b0d14, // deep navy
+            0x1a0b2e, // purple-dark
+            0x0d1b2a, // teal-dark
+            0x2e0b0b, // red-dark
+            0x0b2e1b, // green-dark
+            0x2e1b0b, // orange-dark
+            0x1b0b2e, // violet-dark
+            0x0b1b2e  // cyan-dark
+        ];
+        this.bgColorIndex = 0;
+        this.bgColorCycleSpeed = 0.5; // seconds per color
+        
         // Card Physics Settings (ELASTICITY/SMOOTHNESS)
         this.cardPhysics = {
             stretchLerp: 0.25,       // Smooth interpolation for size (higher = faster, 0.0-1.0)
@@ -82,20 +98,18 @@ export default class SoftCanvasScene extends Phaser.Scene {
         this.graphics = this.add.graphics();
         this.uiGraphics = this.add.graphics();
 
+        // Initialize Layer Panel FIRST (before creating any cards)
+        this.layerPanel = new LayerPanel(this, this.palette);
+        
+        // Initialize Gesture Display (shows current gesture & code path)
+        this.gestureDisplay = new GestureDisplay(this);
+
         // Scene title
         this.add.text(24, 20, 'Soft Canvas', {
             fontSize: '18px',
             color: this.palette.textPrimary,
             fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
         }).setAlpha(0.85).setDepth(1000);
-
-        // --- THE FORGE (Generation Zone) ---
-        this.forgeZone = { y: 400, height: 400 };
-        this.add.text(500, 780, 'THE FORGE :: GENERATION ZONE', { 
-            fontSize: '10px', 
-            color: this.palette.textMuted,
-            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
-        }).setAlpha(0.6).setOrigin(0.5);
 
         // Create initial VR Cards
         this.createCard(500, 300, 400, 300, "VR Card Demo\n\nThis is a stretchable card.\nGrab with one hand to move.\nGrab with both hands to stretch!");
@@ -116,6 +130,11 @@ export default class SoftCanvasScene extends Phaser.Scene {
             color: this.palette.textMuted,
             fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
         }).setAlpha(0.8);
+
+        // Register layer objects with panel
+        this.layerPanel.registerLayerGroup('cards', this.cards.map(c => c.container));
+        this.layerPanel.registerLayerGroup('blocks', this.blocks.map(b => b.container));
+        this.layerPanel.registerLayerObject('trails', this.trailGraphics);
     }
 
     createBlock(x, y, text, confidence = 1.0, isGhost = false) {
@@ -285,6 +304,7 @@ export default class SoftCanvasScene extends Phaser.Scene {
         };
 
         this.cards.push(card);
+        this.layerPanel.updateCardsList(this.cards);
         return card;
     }
 
@@ -311,6 +331,20 @@ export default class SoftCanvasScene extends Phaser.Scene {
     }
 
     update(time, delta) {
+        // Update gesture display
+        this.gestureDisplay.update(time);
+        
+        // Cycle background color
+        if (!this.bgColorTimer) this.bgColorTimer = 0;
+        this.bgColorTimer += delta / 1000; // Convert to seconds
+        
+        if (this.bgColorTimer >= this.bgColorCycleSpeed) {
+            this.bgColorIndex = (this.bgColorIndex + 1) % this.bgColors.length;
+            this.bgColorTimer = 0;
+            const color = this.bgColors[this.bgColorIndex];
+            this.cameras.main.setBackgroundColor(color);
+        }
+        
         this.graphics.clear();
         this.uiGraphics.clear(); 
         this.drawBackground();
@@ -935,6 +969,8 @@ export default class SoftCanvasScene extends Phaser.Scene {
                 }
             });
             
+            // Update layer panel
+            this.layerPanel.updateCardsList(this.cards);
             this.debugText.setText('CARD CLOSED');
         }
     }
@@ -1121,23 +1157,45 @@ export default class SoftCanvasScene extends Phaser.Scene {
     }
 
     addSpawnButton() {
-        const padding = 10; const w = 120; const h = 36;
-        const x = padding + w/2; const y = 60; // under title
-        const btn = this.add.rectangle(x, y, w, h, 0x0d2230, 0.6).setStrokeStyle(2, this.palette.neon, 0.6);
-        btn.setInteractive();
-        btn.on('pointerover', () => btn.setFillStyle(0x123246, 0.7));
-        btn.on('pointerout', () => btn.setFillStyle(0x0d2230, 0.6));
-        btn.on('pointerdown', () => {
-            // Spawn a new holographic card instead of a box
-            const card = this.createCard(500, 400, 400, 300, "Speak to write…");
-            // Auto-start speech capture for the new card
-            this.startSpeechForCard(card);
+        const padding = 10; 
+        const w = 140; 
+        const h = 44;
+        const x = padding + w/2; 
+        const y = 60; // under title
+        
+        // Create button with larger hit area
+        const btn = this.add.rectangle(x, y, w, h, 0x0d2230, 0.8)
+            .setStrokeStyle(2, this.palette.neon, 0.8)
+            .setDepth(1001);
+        
+        btn.setInteractive({ useHandCursor: true });
+        
+        btn.on('pointerover', () => {
+            btn.setFillStyle(0x1a4a5a, 0.9);
+            btn.setStrokeStyle(2, this.palette.neon, 1.0);
         });
+        
+        btn.on('pointerout', () => {
+            btn.setFillStyle(0x0d2230, 0.8);
+            btn.setStrokeStyle(2, this.palette.neon, 0.8);
+        });
+        
+        btn.on('pointerdown', () => {
+            this.debugText.setText('Adding new card...');
+            // Spawn a new holographic card
+            const card = this.createCard(500, 400, 400, 300, "Speak to write…");
+            // Auto-start speech capture
+            this.startSpeechForCard(card);
+            this.debugText.setText('Card created - speak now!');
+        });
+        
+        // Add text label
         this.add.text(x, y, 'Add', {
-            fontSize: '12px',
+            fontSize: '13px',
+            fontStyle: 'bold',
             color: this.palette.textPrimary,
             fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
-        }).setOrigin(0.5);
+        }).setOrigin(0.5).setDepth(1002);
     }
 
     startSpeechForBlock(block) {

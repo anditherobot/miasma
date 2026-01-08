@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Miasma JS - Documentation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a0a2e 100%);
+            color: #e0e0e0;
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+            border-bottom: 2px solid #00d9ff;
+            padding-bottom: 20px;
+        }
+
+        h1 {
+            color: #00d9ff;
+            font-size: 2.5em;
+            text-shadow: 0 0 10px rgba(0, 217, 255, 0.5);
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #888;
+            font-size: 1.1em;
+        }
+
+        nav {
+            background: rgba(0, 20, 40, 0.6);
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            border: 1px solid #00d9ff;
+        }
+
+        nav ul {
+            list-style: none;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        nav button {
+            background: transparent;
+            border: 1px solid #00d9ff;
+            color: #00d9ff;
+            padding: 8px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.3s ease;
+        }
+
+        nav button:hover {
+            background: rgba(0, 217, 255, 0.1);
+            box-shadow: 0 0 10px rgba(0, 217, 255, 0.3);
+        }
+
+        nav button.active {
+            background: #00d9ff;
+            color: #0a0a0a;
+        }
+
+        #content {
+            background: rgba(10, 10, 10, 0.8);
+            border: 1px solid #00d9ff;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 0 20px rgba(0, 217, 255, 0.1);
+        }
+
+        #content h2 {
+            color: #00d9ff;
+            font-size: 1.8em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+            border-left: 4px solid #00d9ff;
+            padding-left: 10px;
+        }
+
+        #content h3 {
+            color: #00ff88;
+            font-size: 1.3em;
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+
+        #content h4 {
+            color: #ffaa00;
+            font-size: 1.1em;
+            margin-top: 15px;
+            margin-bottom: 8px;
+        }
+
+        #content p {
+            margin-bottom: 15px;
+            color: #c0c0c0;
+        }
+
+        #content ul, #content ol {
+            margin-left: 20px;
+            margin-bottom: 15px;
+        }
+
+        #content li {
+            margin-bottom: 8px;
+            color: #b0b0b0;
+        }
+
+        #content code {
+            background: rgba(0, 217, 255, 0.1);
+            border: 1px solid #00d9ff;
+            color: #00ff88;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        #content pre {
+            background: rgba(0, 0, 0, 0.6);
+            border: 1px solid #00d9ff;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 15px;
+            overflow-x: auto;
+        }
+
+        #content pre code {
+            background: none;
+            border: none;
+            padding: 0;
+            color: #00ff88;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+
+        th, td {
+            border: 1px solid #00d9ff;
+            padding: 10px;
+            text-align: left;
+        }
+
+        th {
+            background: rgba(0, 217, 255, 0.2);
+            color: #00d9ff;
+            font-weight: bold;
+        }
+
+        tr:nth-child(even) {
+            background: rgba(0, 217, 255, 0.05);
+        }
+
+        .toc {
+            background: rgba(0, 217, 255, 0.05);
+            border: 1px solid #00d9ff;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .toc h3 {
+            margin-top: 0;
+        }
+
+        .toc ul {
+            list-style: none;
+            margin-left: 0;
+        }
+
+        .toc a {
+            color: #00d9ff;
+            text-decoration: none;
+            transition: color 0.3s;
+        }
+
+        .toc a:hover {
+            color: #00ff88;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #00d9ff;
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .loading {
+            text-align: center;
+            color: #00d9ff;
+            font-size: 1.2em;
+        }
+
+        .error {
+            background: rgba(255, 0, 0, 0.1);
+            border: 1px solid #ff0000;
+            color: #ff6666;
+            padding: 15px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎮 Miasma JS</h1>
+            <p class="subtitle">Game Development Documentation</p>
+        </header>
+
+        <nav>
+            <ul id="nav-buttons"></ul>
+        </nav>
+
+        <div id="content" class="loading">Loading documentation...</div>
+
+        <footer>
+            <p>Miasma JS © 2026 | Real-time gesture detection with MediaPipe</p>
+        </footer>
+    </div>
+
+    <script>
+        const docSources = {
+            'Gestures': 'gestures/GESTURE_GUIDE.md',
+        };
+
+        const contentDiv = document.getElementById('content');
+        const navButtons = document.getElementById('nav-buttons');
+
+        // Create navigation buttons
+        Object.keys(docSources).forEach(name => {
+            const button = document.createElement('button');
+            button.textContent = name;
+            button.dataset.doc = name;
+            button.onclick = () => loadDocument(name);
+            navButtons.appendChild(button);
+        });
+
+        // Simple markdown to HTML converter
+        function markdownToHtml(markdown) {
+            let html = markdown;
+
+            // Code blocks (triple backticks)
+            html = html.replace(/```[\s\S]*?```/g, match => {
+                const code = match.slice(3, -3).trim();
+                return `<pre><code>${escapeHtml(code)}</code></pre>`;
+            });
+
+            // Headings
+            html = html.replace(/^### (.*?)$/gm, '<h4>$1</h4>');
+            html = html.replace(/^## (.*?)$/gm, '<h3>$1</h3>');
+            html = html.replace(/^# (.*?)$/gm, '<h2>$1</h2>');
+
+            // Inline code
+            html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+            // Bold
+            html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+
+            // Italic
+            html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+
+            // Links
+            html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank">$1</a>');
+
+            // Unordered lists
+            html = html.replace(/^\* (.*?)$/gm, '<li>$1</li>');
+            html = html.replace(/(<li>.*?<\/li>)/s, match => `<ul>${match}</ul>`);
+
+            // Paragraphs
+            html = html.split('\n\n').map(para => {
+                if (para.match(/<[hul]/)) return para;
+                return `<p>${para.trim()}</p>`;
+            }).join('');
+
+            // Tables (simple)
+            html = html.replace(/\|.*\|/g, match => {
+                const rows = markdown.split('\n').filter(line => line.includes('|'));
+                if (rows.length === 0) return match;
+                
+                return `<table>${rows.map((row, idx) => {
+                    const cells = row.split('|').slice(1, -1).map(cell => cell.trim());
+                    const tag = idx === 1 ? 'th' : 'td';
+                    return `<tr>${cells.map(cell => `<${tag}>${cell}</${tag}>`).join('')}</tr>`;
+                }).join('')}</table>`;
+            });
+
+            return html;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        async function loadDocument(docName) {
+            const path = docSources[docName];
+            contentDiv.innerHTML = '<div class="loading">Loading...</div>';
+
+            // Update active button
+            document.querySelectorAll('nav button').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.dataset.doc === docName) btn.classList.add('active');
+            });
+
+            try {
+                const response = await fetch(path);
+                if (!response.ok) throw new Error(`Failed to load: ${response.status}`);
+                
+                const markdown = await response.text();
+                const html = markdownToHtml(markdown);
+                contentDiv.innerHTML = html;
+                
+                // Scroll to top
+                window.scrollTo(0, 0);
+            } catch (error) {
+                contentDiv.innerHTML = `<div class="error">Error loading document: ${error.message}</div>`;
+            }
+        }
+
+        // Load first document on startup
+        window.addEventListener('load', () => {
+            const firstDoc = Object.keys(docSources)[0];
+            loadDocument(firstDoc);
+        });
+    </script>
+</body>
+</html>
