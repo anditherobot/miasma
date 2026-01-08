@@ -3,6 +3,7 @@ import GuitarScene from './scenes/GuitarScene.js';
 import Level1 from './scenes/Level1.js';
 import HandGestures from './scenes/HandGestures.js';
 import FaceShaderScene from './scenes/FaceShaderScene.js';
+import SoftCanvasScene from './scenes/SoftCanvasScene.js';
 import { handTrackingInstance } from './core/HandTracking.js';
 import { faceTrackingInstance } from './core/FaceTracking.js';
 import { initializeEffects } from './effects/effects-library.js';
@@ -30,7 +31,7 @@ const config = {
             debug: true // Set to false to hide collision boxes
         }
     },
-    scene: [FaceShaderScene, GuitarScene, HandGestures, Level1]
+    scene: [SoftCanvasScene, FaceShaderScene, GuitarScene, HandGestures, Level1]
 };
 
 const game = new Phaser.Game(config);
