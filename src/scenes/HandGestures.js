@@ -1,10 +1,14 @@
 import Phaser from 'phaser';
 import { handTrackingInstance } from '../core/HandTracking.js';
+import { addNavigationButtons } from '../ui/NavigationButtons.js';
 
 export default class HandGestures extends Phaser.Scene {
     constructor() { super('HandGestures'); }
 
     create() {
+        // Add Navigation Buttons
+        addNavigationButtons(this);
+
         // --- ASSETS & STYLES ---
         this.styles = {
             jointColor: 0xffffff,

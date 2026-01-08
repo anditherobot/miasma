@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import AudioManager from '../core/AudioManager.js';
 import AssetGenerator from '../core/Assets.js';
 import { COLORS, DEPTH, PHYSICS } from '../core/Constants.js';
+import { addNavigationButtons } from '../ui/NavigationButtons.js';
 
 export default class Level1 extends Phaser.Scene {
     constructor() { super('Level1'); }
@@ -13,6 +14,9 @@ export default class Level1 extends Phaser.Scene {
     }
 
     create() {
+        // Add Navigation Buttons
+        addNavigationButtons(this);
+
         AudioManager.init();
         this.input.once('pointerdown', () => AudioManager.resume());
 

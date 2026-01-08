@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { handTrackingInstance } from '../core/HandTracking.js';
 import AudioManager from '../core/AudioManager.js';
+import { addNavigationButtons } from '../ui/NavigationButtons.js';
 
 // Core & Systems
 import { GuitarState } from '../core/GuitarState.js';
@@ -21,6 +22,9 @@ export default class GuitarScene extends Phaser.Scene {
     create() {
         // Setup
         this.cameras.main.setBackgroundColor('rgba(0,0,0,0)');
+
+        // Add Navigation Buttons
+        addNavigationButtons(this);
 
         // Audio Initialization
         const startAudio = () => {

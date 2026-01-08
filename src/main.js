@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import MenuScene from './scenes/MenuScene.js';
 import GuitarScene from './scenes/GuitarScene.js';
 import Level1 from './scenes/Level1.js';
 import HandGestures from './scenes/HandGestures.js';
@@ -31,7 +32,7 @@ const config = {
             debug: true // Set to false to hide collision boxes
         }
     },
-    scene: [SoftCanvasScene, FaceShaderScene, GuitarScene, HandGestures, Level1]
+    scene: [MenuScene, SoftCanvasScene, FaceShaderScene, GuitarScene, HandGestures, Level1]
 };
 
 const game = new Phaser.Game(config);

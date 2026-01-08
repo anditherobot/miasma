@@ -10,6 +10,7 @@ import Phaser from 'phaser';
 import { faceTrackingInstance } from '../core/FaceTracking.js';
 import { handTrackingInstance } from '../core/HandTracking.js';
 import { effectManager } from '../core/EffectManager.js';
+import { addNavigationButtons } from '../ui/NavigationButtons.js';
 
 export default class FaceShaderScene extends Phaser.Scene {
     constructor() {
@@ -19,6 +20,9 @@ export default class FaceShaderScene extends Phaser.Scene {
 
     create() {
         console.log("FaceShaderScene: Starting");
+
+        // Add Navigation Buttons
+        addNavigationButtons(this);
 
         // Set transparent background to see through to video
         this.cameras.main.setBackgroundColor('rgba(0,0,0,0)');
