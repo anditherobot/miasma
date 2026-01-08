@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 import { handTrackingInstance } from '../core/HandTracking.js';
 import { addNavigationButtons } from '../ui/NavigationButtons.js';
+import { speechInput } from '../core/SpeechInput.js';
+import { BoxManager } from '../systems/BoxManager.js';
 
 export default class SoftCanvasScene extends Phaser.Scene {
     constructor() {
@@ -16,12 +18,40 @@ export default class SoftCanvasScene extends Phaser.Scene {
         this.confidenceDecayRate = 0.005; // Per frame
         this.auraRadius = 40;
         
+        // Visual palette for Soft Canvas (cohesive, modern look)
+        this.palette = {
+            bgDeep: 0x0b0d14,
+            bgMid: 0x10131c,
+            grid: 0x1b2030,
+            neon: 0x00ffcc,
+            accent: 0x2196F3,
+            accentAlt: 0x9C27B0,
+            cardBase: 0xFAFAFA,
+            textPrimary: '#e6f0ff',
+            textMuted: '#8aa1b4'
+        };
+        
         // Card Visual Settings (TRANSPARENCY CONTROLS)
         this.cardTransparency = {
             background: 0.95,        // Main card background (0.0 - 1.0)
             shadow: 0.08,            // Drop shadow opacity
             border: 0.6,             // Border line opacity
             closeButton: 0.9         // Close button opacity
+        };
+        
+        // Holographic FX for cards (Minority Report style)
+        this.holoFX = {
+            edgeColor: 0x00eaff,
+            edgeAlt: 0x47b9ff,
+            edgeAlpha: 0.9,
+            innerAlpha: 0.06,
+            scanlineAlpha: 0.12,
+            shimmerSpeed: 0.6,   // cycles/sec
+            tiltMax: 0.06,       // radians
+            trailColor: 0x00c6ff,
+            trailAlpha: 0.35,
+            trailWidth: 6,
+            trailLengthMs: 220
         };
         
         // Card Physics Settings (ELASTICITY/SMOOTHNESS)
@@ -41,35 +71,31 @@ export default class SoftCanvasScene extends Phaser.Scene {
     create() {
         // Add Navigation Buttons
         addNavigationButtons(this);
+        // Initialize BoxManager and expose blocks reference
+        this.boxManager = new BoxManager(this, this.palette, speechInput);
+        this.blocks = this.boxManager.blocks;
 
         this.cameras.main.setBackgroundColor('rgba(0,0,0,0)');
+        // Layered graphics: bg (back), graphics (main), uiGraphics (overlay)
+        this.bgGraphics = this.add.graphics();
+        this.trailGraphics = this.add.graphics();
         this.graphics = this.add.graphics();
         this.uiGraphics = this.add.graphics();
 
-        // --- THE SHELF (Interface Boxes) ---
-        this.shelfHeight = 120;
-        this.shelfBoxes = [
-            { id: 'BUG FIX', x: 200, y: 60, keywords: ['fix', 'bug', 'error', 'issue'] },
-            { id: 'FEATURE', x: 500, y: 60, keywords: ['add', 'feature', 'new', 'create'] },
-            { id: 'REFACTOR', x: 800, y: 60, keywords: ['clean', 'refactor', 'optimize'] }
-        ];
-
-        this.shelfBoxes.forEach(box => {
-            const rect = this.add.rectangle(box.x, box.y, 250, 80, 0xffffff, 0.05)
-                .setStrokeStyle(2, 0x00ffcc, 0.3);
-            this.add.text(box.x, box.y - 35, box.id, { fontSize: '12px', fill: '#00ffcc', alpha: 0.6 }).setOrigin(0.5);
-            box.rect = rect;
-        });
+        // Scene title
+        this.add.text(24, 20, 'Soft Canvas', {
+            fontSize: '18px',
+            color: this.palette.textPrimary,
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+        }).setAlpha(0.85).setDepth(1000);
 
         // --- THE FORGE (Generation Zone) ---
         this.forgeZone = { y: 400, height: 400 };
-        this.add.text(500, 780, 'THE FORGE :: GENERATION ZONE', { fontSize: '10px', fill: '#aaa', alpha: 0.5 }).setOrigin(0.5);
-
-        // Create initial blocks
-        this.createBlock(300, 600, "fix css layout", 1.0);
-        this.createBlock(500, 650, "add hand tracking", 1.0);
-        this.createBlock(700, 600, "clean up code", 1.0);
-        this.createBlock(500, 700, "Ghost: Optimize Shaders", 0.5, true);
+        this.add.text(500, 780, 'THE FORGE :: GENERATION ZONE', { 
+            fontSize: '10px', 
+            color: this.palette.textMuted,
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+        }).setAlpha(0.6).setOrigin(0.5);
 
         // Create initial VR Cards
         this.createCard(500, 300, 400, 300, "VR Card Demo\n\nThis is a stretchable card.\nGrab with one hand to move.\nGrab with both hands to stretch!");
@@ -82,7 +108,14 @@ export default class SoftCanvasScene extends Phaser.Scene {
             this.createCard(500, 400, 300, 200, "New Card\n\nPress C to create more cards.");
         });
 
-        this.debugText = this.add.text(10, 770, 'SOFT CANVAS :: READY', { fontSize: '14px', fill: '#00ffcc' });
+        // Spawn Box button
+        this.addSpawnButton();
+
+        this.debugText = this.add.text(10, 770, 'SOFT CANVAS :: READY', { 
+            fontSize: '12px', 
+            color: this.palette.textMuted,
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+        }).setAlpha(0.8);
     }
 
     createBlock(x, y, text, confidence = 1.0, isGhost = false) {
@@ -92,14 +125,17 @@ export default class SoftCanvasScene extends Phaser.Scene {
         this.updateBlockVisuals(bg, confidence, isGhost, false);
 
         const txt = this.add.text(0, 0, text, {
-            fontSize: '16px',
-            fill: '#ffffff',
+            fontSize: '14px',
+            color: '#e6f0ff',
             align: 'center',
-            wordWrap: { width: 160 }
+            wordWrap: { width: 160 },
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
         }).setOrigin(0.5);
 
         container.add([bg, txt]);
         container.setSize(180, 60);
+        container.setInteractive(new Phaser.Geom.Rectangle(-90, -30, 180, 60), Phaser.Geom.Rectangle.Contains);
+        container.on('pointerdown', () => this.startSpeechForBlock(block));
         
         const block = {
             container: container,
@@ -111,7 +147,8 @@ export default class SoftCanvasScene extends Phaser.Scene {
             confidence: confidence,
             isGhost: isGhost,
             isExpanded: false,
-            lastInteractionTime: performance.now()
+            lastInteractionTime: performance.now(),
+            listening: false
         };
 
         this.blocks.push(block);
@@ -123,6 +160,7 @@ export default class SoftCanvasScene extends Phaser.Scene {
         
         // Modern flat card with subtle shadow
         const bg = this.add.graphics();
+        const overlay = this.add.graphics();
         
         // Soft shadow for elevation (iOS/Material style)
         bg.fillStyle(0x000000, this.cardTransparency.shadow);
@@ -185,12 +223,36 @@ export default class SoftCanvasScene extends Phaser.Scene {
             handles.strokeCircle(corner.x, corner.y, handleSize);
         });
 
-        container.add([bg, handles, txt, closeBtn]);
+        container.add([bg, overlay, handles, txt, closeBtn]);
         container.setSize(width, height);
+        
+        // Make card clickable for speech input
+        container.setInteractive(
+            new Phaser.Geom.Rectangle(-width/2, -height/2, width, height),
+            Phaser.Geom.Rectangle.Contains
+        );
+        container.on('pointerdown', (pointer) => {
+            // Check if clicking close button (already handled in processHandForCards)
+            const localX = pointer.x - container.x;
+            const localY = pointer.y - container.y;
+            const distToCloseBtn = Phaser.Math.Distance.Between(
+                localX, localY,
+                closeBtnX, closeBtnY
+            );
+            if (distToCloseBtn < 12) return; // Don't start speech if clicking close button
+            
+            // Toggle speech on/off for this card
+            if (card.listening) {
+                this.stopSpeechForCard(card);
+            } else {
+                this.startSpeechForCard(card);
+            }
+        });
         
         const card = {
             container: container,
             bg: bg,
+            overlay: overlay,
             handles: handles,
             text: txt,
             closeBtn: closeBtn,
@@ -214,7 +276,12 @@ export default class SoftCanvasScene extends Phaser.Scene {
                 prevTargetY: y,
                 prevVelX: 0,
                 prevVelY: 0
-            }
+            },
+            motionHistory: [],
+            edgeGlow: 0,
+            shimmerPhase: 0,
+            listening: false,
+            listeningPhase: null
         };
 
         this.cards.push(card);
@@ -223,22 +290,22 @@ export default class SoftCanvasScene extends Phaser.Scene {
 
     updateBlockVisuals(bg, confidence, isGhost, isGrabbed) {
         bg.clear();
-        const alpha = isGhost ? 0.3 : confidence;
-        const color = isGrabbed ? 0xffffff : (confidence > 0.8 ? 0x00ffcc : 0xffcc00);
-        
-        bg.fillStyle(0x333333, alpha * 0.8);
+        const alpha = isGhost ? 0.28 : Math.max(0.5, Math.min(1, confidence));
+        const accent = isGrabbed ? 0xffffff : (confidence > 0.8 ? this.palette.neon : 0xffcc00);
+
+        // soft glass base
+        bg.fillStyle(0xFFFFFF, alpha * 0.08);
         bg.fillRoundedRect(-90, -30, 180, 60, 10);
-        
-        if (isGhost) {
-            bg.lineStyle(1, 0xffffff, 0.4);
-        } else {
-            bg.lineStyle(isGrabbed ? 3 : 2, color, alpha);
-        }
+        // subtle inner stroke
+        bg.lineStyle(1, 0xFFFFFF, 0.12 * alpha);
+        bg.strokeRoundedRect(-88, -28, 176, 56, 8);
+        // accent outline
+        bg.lineStyle(isGrabbed ? 3 : 2, accent, 0.45 + 0.35 * alpha);
         bg.strokeRoundedRect(-90, -30, 180, 60, 10);
 
         if (confidence > 0.9 && !isGhost) {
-            // Glow effect
-            bg.lineStyle(4, color, alpha * 0.3);
+            // gentle aura ring
+            bg.lineStyle(6, accent, 0.15 * alpha);
             bg.strokeRoundedRect(-95, -35, 190, 70, 12);
         }
     }
@@ -246,6 +313,8 @@ export default class SoftCanvasScene extends Phaser.Scene {
     update(time, delta) {
         this.graphics.clear();
         this.uiGraphics.clear(); 
+        this.drawBackground();
+        this.trailGraphics.clear();
         
         const landmarks = handTrackingInstance.getLandmarks();
 
@@ -282,12 +351,6 @@ export default class SoftCanvasScene extends Phaser.Scene {
             });
         }
 
-        // 2. Periodic Ghost Spawning
-        if (!this.lastGhostSpawn || time - this.lastGhostSpawn > 15000) {
-            this.spawnRandomGhost();
-            this.lastGhostSpawn = time;
-        }
-
         // 3. Block Logic: Movement, Decay, Fading
         this.blocks.forEach((block, index) => {
             // Smooth lerp to target position
@@ -305,7 +368,7 @@ export default class SoftCanvasScene extends Phaser.Scene {
                     this.blocks.splice(index, 1);
                     return;
                 }
-                this.updateBlockVisuals(block.bg, block.confidence, block.isGhost, block.isGrabbed);
+                this.boxManager.updateBlockVisuals(block.bg, block.confidence, block.isGhost, block.isGrabbed);
             }
         });
         
@@ -360,6 +423,12 @@ export default class SoftCanvasScene extends Phaser.Scene {
                 ms.prevTargetY = card.targetY;
             }
         });
+
+        // 5. Card FX: holographic overlays, trails, tilt/shimmer
+        this.cards.forEach(card => this.updateCardFX(card, time, typeof delta === 'number' ? delta : 16));
+
+        // 6. Block FX: listening pulse animation
+        this.blocks.forEach(block => this.boxManager.updateBlockFX(block, typeof delta === 'number' ? delta : 16));
     }
 
     checkDismissGesture(hand, handIndex) {
@@ -386,7 +455,7 @@ export default class SoftCanvasScene extends Phaser.Scene {
         const text = ideas[Math.floor(Math.random() * ideas.length)];
         const x = 200 + Math.random() * 600;
         const y = 500 + Math.random() * 200;
-        this.createBlock(x, y, `Ghost: ${text}`, 0.5, true);
+        this.boxManager.createBlock(x, y, `Ghost: ${text}`, 0.5, true);
     }
 
     dismissAllGhosts() {
@@ -448,7 +517,16 @@ export default class SoftCanvasScene extends Phaser.Scene {
             this.drawAura(midX, midY, holdDuration / 1000);
 
             if (holdDuration > 1000 && !grabbedBlock) {
-                 this.debugText.setText(`SPEECH_ENGINE :: ACTIVE [HAND_${handIndex}]`);
+                 // Find nearest block to start speech
+                 let nearest = null; let nearestDist = Infinity;
+                 this.blocks.forEach(b => {
+                     const d = Phaser.Math.Distance.Between(midX, midY, b.container.x, b.container.y);
+                     if (d < 120 && d < nearestDist) { nearest = b; nearestDist = d; }
+                 });
+                 if (nearest && !nearest.listening) {
+                     this.boxManager.startSpeechForBlock(nearest);
+                     this.debugText.setText(`SPEECH_ENGINE :: ACTIVE [HAND_${handIndex}]`);
+                 }
             }
 
             if (!grabbedBlock) {
@@ -478,36 +556,42 @@ export default class SoftCanvasScene extends Phaser.Scene {
 
     drawReticle(x, y, isHovering) {
         const g = this.uiGraphics;
-        g.lineStyle(2, 0x00ffcc, 0.8);
+        const base = this.palette.neon;
+        g.lineStyle(2, base, 0.9);
         if (isHovering) {
             // Crosshair
-            g.strokeCircle(x, y, 8);
-            g.moveTo(x - 12, y); g.lineTo(x + 12, y);
-            g.moveTo(x, y - 12); g.lineTo(x, y + 12);
+            g.strokeCircle(x, y, 10);
+            g.moveTo(x - 14, y); g.lineTo(x + 14, y);
+            g.moveTo(x, y - 14); g.lineTo(x, y + 14);
         } else {
             // Simple Dot
-            g.strokeCircle(x, y, 4);
+            g.strokeCircle(x, y, 5);
         }
         g.strokePath();
     }
 
     drawAura(x, y, progress) {
         const g = this.uiGraphics;
-        const radius = 30;
-        g.lineStyle(2, 0xffffff, 0.3);
+        const radius = 32;
+        // outer soft ring
+        g.lineStyle(2, 0xffffff, 0.25);
         g.strokeCircle(x, y, radius);
         
         if (progress > 0) {
-            g.lineStyle(4, 0x00ffcc, 1);
+            const pct = Math.min(progress, 1);
+            g.lineStyle(5, this.palette.neon, 0.95);
             g.beginPath();
-            g.arc(x, y, radius, -Math.PI/2, -Math.PI/2 + (Math.PI * 2 * Math.min(progress, 1)));
+            g.arc(x, y, radius, -Math.PI/2, -Math.PI/2 + (Math.PI * 2 * pct));
             g.strokePath();
+            // inner faint ring
+            g.lineStyle(1, this.palette.neon, 0.35);
+            g.strokeCircle(x, y, radius - 8);
         }
 
         if (progress >= 1.0) {
-            // Border glow
-            g.lineStyle(10, 0x00ffcc, 0.1 * Math.sin(performance.now() / 200) + 0.1);
-            g.strokeRect(0, 0, 1000, 800);
+            // subtle animated border glow
+            g.lineStyle(8, this.palette.neon, 0.08 * Math.sin(performance.now() / 240) + 0.12);
+            g.strokeRect(8, 8, 984, 784);
         }
     }
 
@@ -520,65 +604,23 @@ export default class SoftCanvasScene extends Phaser.Scene {
             y: block.container.y - y
         };
         block.originalGrabPos = { x: x, y: y };
-        this.updateBlockVisuals(block.bg, block.confidence, block.isGhost, true);
+        this.boxManager.updateBlockVisuals(block.bg, block.confidence, block.isGhost, true);
     }
 
     moveBlock(block, x, y) {
-        let targetX = x + block.grabOffset.x;
-        let targetY = y + block.grabOffset.y;
-
-        // --- MAGNETIC AXIS SNAPPING ---
-        const dx = Math.abs(x - block.originalGrabPos.x);
-        const dy = Math.abs(y - block.originalGrabPos.y);
-
-        if (dx > 20 || dy > 20) { // Min threshold to start snapping logic
-            if (dx > dy * 2) {
-                // Mostly horizontal movement
-                const snappedY = block.originalGrabPos.y + block.grabOffset.y;
-                targetY = targetY + (snappedY - targetY) * (1 - this.wobbleAmount);
-            } else if (dy > dx * 2) {
-                // Mostly vertical movement
-                const snappedX = block.originalGrabPos.x + block.grabOffset.x;
-                targetX = targetX + (snappedX - targetX) * (1 - this.wobbleAmount);
-            }
-        }
-
-        block.container.x = targetX;
-        block.container.y = targetY;
-        block.targetPos.x = targetX;
-        block.targetPos.y = targetY;
+        this.boxManager.moveBlock(block, x, y, this.wobbleAmount);
     }
 
     releaseBlock(block, handIndex) {
         if (!block) return;
         block.isGrabbed = false;
         delete this.grabbedBlocksByHand[handIndex];
-        
-        // --- KEYWORD ROUTING & SHELF SNAPPING ---
-        if (block.container.y < this.shelfHeight + 50) {
-            let snapped = false;
-            const text = block.text.text.toLowerCase();
-
-            for (const box of this.shelfBoxes) {
-                // Check keywords or proximity
-                const matchesKeyword = box.keywords.some(k => text.includes(k));
-                const isNear = Phaser.Math.Distance.Between(block.container.x, block.container.y, box.x, box.y) < 150;
-
-                if (matchesKeyword || isNear) {
-                    block.targetPos.x = box.x;
-                    block.targetPos.y = box.y;
-                    snapped = true;
-                    this.debugText.setText(`ROUTED :: ${box.id}`);
-                    break;
-                }
-            }
-
-            if (!snapped) {
-                block.targetPos.y = this.shelfHeight / 2;
-            }
+        // Stop speech if tied to this block
+        if (block.listening) {
+            this.boxManager.stopSpeechForBlock(block);
         }
 
-        this.updateBlockVisuals(block.bg, block.confidence, block.isGhost, false);
+        this.boxManager.updateBlockVisuals(block.bg, block.confidence, block.isGhost, false);
     }
 
     processHandForCards(hand, handIndex, time) {
@@ -691,6 +733,7 @@ export default class SoftCanvasScene extends Phaser.Scene {
         // Active state border (blue accent)
         card.bg.lineStyle(2, 0x2196F3, 0.8);
         card.bg.strokeRoundedRect(-card.width/2, -card.height/2, card.width, card.height, 12);
+        card.edgeGlow = 1.0;
         
         this.debugText.setText(`CARD GRABBED [HAND_${handIndex}]`);
     }
@@ -700,6 +743,12 @@ export default class SoftCanvasScene extends Phaser.Scene {
         // Update movement targets instead of directly setting position
         card.targetX = x + card.grabOffsets[handIndex].x;
         card.targetY = y + card.grabOffsets[handIndex].y;
+        // Track motion for trails (world-space)
+        card.motionHistory.push({ x: card.container.x, y: card.container.y, t: performance.now() });
+        const cutoff = performance.now() - this.holoFX.trailLengthMs;
+        while (card.motionHistory.length && card.motionHistory[0].t < cutoff) {
+            card.motionHistory.shift();
+        }
     }
 
     stretchCard(card) {
@@ -843,6 +892,7 @@ export default class SoftCanvasScene extends Phaser.Scene {
             card.initialStretchDistance = null;
             card.initialStretchSize = null;
             card.lockedPosition = null; // Clear locked position
+            card.motionHistory = [];
             
             // Reset visual - modern default state
             card.bg.clear();
@@ -891,7 +941,7 @@ export default class SoftCanvasScene extends Phaser.Scene {
 
     drawHand(hand, handIndex, time) {
         const g = this.graphics;
-        const color = handIndex === "0" ? 0x00ffcc : 0x00aaff;
+        const color = handIndex === "0" ? this.palette.neon : 0x00aaff;
         g.lineStyle(2, color, 0.5);
         
         const points = hand.map(p => ({
@@ -929,5 +979,195 @@ export default class SoftCanvasScene extends Phaser.Scene {
                 g.strokeCircle(p.x, p.y, 6);
             }
         });
+    }
+
+    drawBackground() {
+        const g = this.bgGraphics;
+        g.clear();
+        // Base layers
+        g.fillStyle(this.palette.bgDeep, 1);
+        g.fillRect(0, 0, 1000, 800);
+        g.fillStyle(this.palette.bgMid, 1);
+        g.fillRect(0, 0, 1000, 800);
+
+        // Soft grid
+        g.lineStyle(1, this.palette.grid, 0.35);
+        const gridSize = 80;
+        for (let x = 0; x <= 1000; x += gridSize) {
+            g.beginPath();
+            g.moveTo(x, 0);
+            g.lineTo(x, 800);
+            g.strokePath();
+        }
+        for (let y = 0; y <= 800; y += gridSize) {
+            g.beginPath();
+            g.moveTo(0, y);
+            g.lineTo(1000, y);
+            g.strokePath();
+        }
+
+        // Vignette
+        g.lineStyle(40, 0x000000, 0.25);
+        g.strokeRect(0, 0, 1000, 800);
+    }
+
+    updateCardFX(card, time, delta) {
+        // Velocity-based tilt
+        const vx = card.container.x - (card._prevX ?? card.container.x);
+        const vy = card.container.y - (card._prevY ?? card.container.y);
+        card._prevX = card.container.x;
+        card._prevY = card.container.y;
+        const speed = Math.hypot(vx, vy);
+        const maxTilt = this.holoFX.tiltMax;
+        const rot = Phaser.Math.Clamp((vx / 60) * maxTilt, -maxTilt, maxTilt);
+        card.container.rotation = Phaser.Math.Linear(card.container.rotation, rot, 0.2);
+
+        // Edge glow decay
+        card.edgeGlow = Math.max(0, card.edgeGlow - (delta / 1000) * 1.5);
+
+        // Listening pulse animation (cyan glow)
+        if (card.listening && card.listeningPhase !== null) {
+            card.listeningPhase += delta / 1000 * this.listeningPulse.speed;
+            const pulseAlpha = Phaser.Math.Linear(
+                this.listeningPulse.minAlpha,
+                this.listeningPulse.maxAlpha,
+                0.5 + 0.5 * Math.sin(card.listeningPhase)
+            );
+            // Override edge glow with listening pulse
+            card.edgeGlow = pulseAlpha;
+        }
+
+        // Holographic overlay (scanlines, edges, arcs)
+        const o = card.overlay;
+        if (!o) return;
+        o.clear();
+        const w = card.width, h = card.height;
+        // faint inner fill
+        o.fillStyle(0xFFFFFF, this.holoFX.innerAlpha);
+        o.fillRoundedRect(-w/2, -h/2, w, h, 12);
+        // scanlines moving
+        const phase = (card.shimmerPhase = (card.shimmerPhase + (delta/1000) * this.holoFX.shimmerSpeed) % 1);
+        o.lineStyle(1, this.holoFX.edgeAlt, this.holoFX.scanlineAlpha);
+        const lineGap = 10;
+        const offset = Math.floor(phase * lineGap);
+        for (let yy = -h/2 + offset; yy < h/2; yy += lineGap) {
+            o.beginPath();
+            o.moveTo(-w/2 + 6, yy);
+            o.lineTo(w/2 - 6, yy);
+            o.strokePath();
+        }
+        // dynamic edge (cyan if listening, normal if not)
+        const edgeColor = card.listening ? 0x00FFFF : this.holoFX.edgeColor;
+        const edgeAlpha = 0.45 + 0.4 * Math.min(1, speed / 40) + 0.35 * card.edgeGlow;
+        o.lineStyle(2, edgeColor, Math.min(1, edgeAlpha));
+        o.strokeRoundedRect(-w/2, -h/2, w, h, 12);
+        // corner arcs accents
+        o.lineStyle(2, this.holoFX.edgeAlt, 0.6);
+        const r = 12; const arcLen = Math.PI/6;
+        o.beginPath(); o.arc(-w/2 + r, -h/2 + r, r+3, Math.PI, Math.PI + arcLen); o.strokePath();
+        o.beginPath(); o.arc(w/2 - r, -h/2 + r, r+3, -arcLen, 0); o.strokePath();
+        o.beginPath(); o.arc(-w/2 + r, h/2 - r, r+3, Math.PI + Math.PI/2 - arcLen, Math.PI + Math.PI/2); o.strokePath();
+        o.beginPath(); o.arc(w/2 - r, h/2 - r, r+3, Math.PI + 2*Math.PI - arcLen, 2*Math.PI); o.strokePath();
+
+        // Trails (world-space) when moving/dragging
+        if (card.isGrabbed && card.motionHistory && card.motionHistory.length > 1) {
+            const tg = this.trailGraphics;
+            for (let i = 1; i < card.motionHistory.length; i++) {
+                const a = card.motionHistory[i-1];
+                const b = card.motionHistory[i];
+                const age = (performance.now() - a.t) / this.holoFX.trailLengthMs;
+                const alpha = Phaser.Math.Clamp(1 - age, 0, 1) * this.holoFX.trailAlpha;
+                tg.lineStyle(this.holoFX.trailWidth * alpha, this.holoFX.trailColor, alpha);
+                tg.beginPath();
+                tg.moveTo(a.x, a.y);
+                tg.lineTo(b.x, b.y);
+                tg.strokePath();
+            }
+        }
+    }
+
+    startSpeechForCard(card) {
+        if (card.listening) return;
+        if (!speechInput.isSupported()) {
+            this.debugText.setText('Speech not supported');
+            return;
+        }
+        card.listening = true;
+        const originalText = card.text.text || '';
+        
+        speechInput.startListening({
+            onInterim: (interim) => {
+                card.text.setText((originalText ? originalText + '\n' : '') + interim);
+            },
+            onFinal: (finalText) => {
+                const current = card.text.text || '';
+                const nl = current.endsWith('\n') ? '' : '\n';
+                card.text.setText(current + nl + finalText);
+            },
+            onError: (e) => {
+                this.debugText.setText('Speech error');
+                card.listening = false;
+            }
+        });
+        
+        // Add listening indicator to card (similar to box pulse)
+        card.listeningPhase = 0;
+    }
+
+    stopSpeechForCard(card) {
+        speechInput.stopListening();
+        card.listening = false;
+        card.listeningPhase = null;
+    }
+
+    addSpawnButton() {
+        const padding = 10; const w = 120; const h = 36;
+        const x = padding + w/2; const y = 60; // under title
+        const btn = this.add.rectangle(x, y, w, h, 0x0d2230, 0.6).setStrokeStyle(2, this.palette.neon, 0.6);
+        btn.setInteractive();
+        btn.on('pointerover', () => btn.setFillStyle(0x123246, 0.7));
+        btn.on('pointerout', () => btn.setFillStyle(0x0d2230, 0.6));
+        btn.on('pointerdown', () => {
+            // Spawn a new holographic card instead of a box
+            const card = this.createCard(500, 400, 400, 300, "Speak to write…");
+            // Auto-start speech capture for the new card
+            this.startSpeechForCard(card);
+        });
+        this.add.text(x, y, 'Add', {
+            fontSize: '12px',
+            color: this.palette.textPrimary,
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+        }).setOrigin(0.5);
+    }
+
+    startSpeechForBlock(block) {
+        if (block.listening) return;
+        if (!speechInput.isSupported()) {
+            this.debugText.setText('Speech not supported');
+            return;
+        }
+        block.listening = true;
+        const originalText = block.text.text || '';
+        speechInput.startListening({
+            onInterim: (interim) => {
+                block.text.setText((originalText ? originalText + '\n' : '') + interim);
+            },
+            onFinal: (finalText) => {
+                const current = block.text.text || '';
+                const nl = current.endsWith('\n') ? '' : '\n';
+                block.text.setText(current + nl + finalText);
+            },
+            onError: (e) => {
+                this.debugText.setText('Speech error');
+                block.listening = false;
+            }
+        });
+        this.updateBlockVisuals(block.bg, block.confidence, block.isGhost, true);
+    }
+
+    stopSpeechForBlock(block) {
+        speechInput.stopListening();
+        block.listening = false;
+        this.updateBlockVisuals(block.bg, block.confidence, block.isGhost, false);
     }
 }
